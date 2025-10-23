@@ -27,6 +27,7 @@ def Experiment_Inline(n, Geometry, Source, Detector,Objects, padding = 0):
 
     
     z_det = Geometry.DSD
+    #print(z_det)
 
     if z_det <= 0:
         raise ValueError("Source-Detector distance must be > 0.")
@@ -39,68 +40,70 @@ def Experiment_Inline(n, Geometry, Source, Detector,Objects, padding = 0):
         raise ValueError("No object is defined.")
 
     px_ref = Source.pixel_size  # Pixel size at the beginning (source plane)
- 
-
     Intensity = np.zeros((n,n), dtype = float)
     
-    
     for i, energy in enumerate(tqdm(energies, desc="Energies")):
+        px_current = px_ref
         w = energy_weights[i]
         u = np.ones((n, n), dtype=np.complex128)
 
-        
         z_prev = Objects_sorted[0].DSO
         #px = Geometry.pixel_size_at_distance(px_ref, z_ref, z_prev, conical) # Previous Implementation
 
         # Apply transmission function
         T0 = Objects_sorted[0].transmission_function(energy, px_ref)
+
         u *= T0
-       
-        #plt.imshow(np.abs(u))
-        #plt.show()
+
         for obj in Objects_sorted[1:]:
             z_next = obj.DSO
             dz = z_next - z_prev
             M = Geometry.calculate_magnification(z_prev, z_next, conical)
             if dz > 0:
                 # Propagate 
-                u = prop.propagate(u, px_ref, dz/M, energy, padding= padding)
+                u = prop.propagate(u, px_current, dz/M, energy, padding= padding)
                 # Update sampling
-                #px = Geometry.pixel_size_at_distance(px_ref, z_ref, z_next, conical) # Previous Implementation
+                px_current *= M  # Previous Implementation
 
-                u = zoom_in(u, M)
+                #u = zoom_in(u, M)
 
             # Apply transmission at z_next
-            Tn = obj.transmission_function(energy, px_ref)
+            Tn = obj.transmission_function(energy, px_current)
             u *= Tn
-            z_prev = z_next
-
-        
+            z_prev = z_next     
         dz = z_det - z_prev
+        #print(dz)
     
         M = Geometry.calculate_magnification(z_prev, z_det, conical)
+        #print('M',M)
         if dz > 0:
             # Propagate with sampling of the last object plane
-            u = prop.propagate(u, px_ref, dz/M, energy, padding= padding)
-            u = zoom_in(u, M)
+            #print(dz/M)
+            u = prop.propagate(u, px_current, dz/M, energy, padding= padding)
+            #u = zoom_in(u, M)
+            px_current *= M
             #px = Geometry.pixel_size_at_distance(px_ref, z_ref, z_det, conical) # Previous Implementation
 
         # Intensity on detector
         I = np.abs(u) ** 2
        
+        #print(f"Energy: {energy} keV, Weight: {w}, Magnification: {M}")
         Intensity += I * (energy_weights[i])
-    px_det = Geometry.pixel_size_at_distance(px_ref, z_ref, z_det, conical)
+    
     M_global = Geometry.calculate_magnification(z_ref, z_det, conical)
 
+    px_det = px_ref * M_global
+    #print(px_det)
+    
     if M == 1:
         M_source = 1
     else:
-        M_source = M_global
+        M_source = M_global - 1
+    
+    # Without zooming: 
     Intensity = Source.PSF_blurr(Intensity, current_pixel_size=px_ref, Magnification=M_source)
 
-
-    if Detector.Image_option == 'Realistic':
-        Intensity = Detector.applyDetector(Intensity, current_pixel_size=px_ref)
+    Intensity = Detector.applyDetector(Intensity, current_pixel_size=px_det)
 
     return Intensity    
 
