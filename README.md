@@ -9,6 +9,7 @@ XPCIpy (X-Ray Phase Contrast Imaging in Python) is an open-source software devel
 * [TLRec](#TLRec)
 * [Notebooks](#Notebooks)
 * [Dependencies](#Dependencies)
+* [How to Cite](#How-to-Cite)
 * [References](#References)
 * [Contact](#Contact)
 
@@ -76,6 +77,25 @@ To install all the libraries type in your terminal.
 pip install -r requirements.txt
 ```
 
+## How to Cite
+If you **XPCIpy** in your research, please cite it:
+```
+@article{Sanchez-Lara:25,
+author = {Victor Sanchez-Lara and Diego Garcia-Pinto},
+journal = {Opt. Express},
+keywords = {Biomedical imaging; Diffraction gratings; Fourier transforms; Phase contrast; Phase shift; X-ray imaging},
+number = {22},
+pages = {45949--45966},
+publisher = {Optica Publishing Group},
+title = {XPCIpy: A Python toolkit for X-ray phase-contrast imaging},
+volume = {33},
+month = {Nov},
+year = {2025},
+url = {https://opg.optica.org/oe/abstract.cfm?URI=oe-33-22-45949},
+doi = {10.1364/OE.573918},
+}
+```
+
 ## References
 
 Reference [2]: Massimi, L., Buchanan, I., Astolfo, A., Endrizzi, M., & Olivo, A. (2020). Fast, non-iterative algorithm for quantitative integration of X-ray differential phase-contrast images. Optics express, 28(26), 39677–39687. https://doi.org/10.1364/OE.405755.
@@ -83,5 +103,6 @@ Reference [2]: Massimi, L., Buchanan, I., Astolfo, A., Endrizzi, M., & Olivo, A.
 
 ## Contact
 If there is any doubt please contact at the following e-mail: vicsan05@ucm.es
+
 
 
