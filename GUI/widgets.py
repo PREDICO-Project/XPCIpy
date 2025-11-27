@@ -105,3 +105,40 @@ class Widget:
         combobox.grid(row=row, column=column+1, padx=10, pady=5, sticky="ew")
 
         return label, combobox
+    
+class VerticalScrolledFrame(ttk.Frame):
+
+    def __init__(self, parent, *args, **kw):
+        super().__init__(parent, *args, **kw)
+
+        vscrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL)
+        vscrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=False)
+        
+
+        canvas = tk.Canvas(self, bd=0, highlightthickness=0, yscrollcommand=vscrollbar.set, background="gray20")
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        vscrollbar.config(command=canvas.yview)
+
+        self.interior = interior = ttk.Frame(canvas, style="TFrame")
+        interior_id = canvas.create_window(0, 0, window=interior, anchor=tk.NW)
+
+        def _configure_interior(event):
+            size = (interior.winfo_reqwidth(), interior.winfo_reqheight())
+            canvas.config(scrollregion="0 0 %s %s" % size)
+
+            if interior.winfo_reqwidth() != canvas.winfo_width():
+                canvas.config(width=interior.winfo_reqwidth())
+
+        interior.bind('<Configure>', _configure_interior)
+
+        def _configure_canvas(event):
+            if interior.winfo_reqwidth() != canvas.winfo_width():
+                canvas.itemconfigure(interior_id, width=canvas.winfo_width())
+
+        canvas.bind('<Configure>', _configure_canvas)
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)

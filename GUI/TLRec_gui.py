@@ -18,26 +18,90 @@ import json
 #from GUI.config.default_conf import default_TLRec_conf
 import time
 
+
+class ImageControlPanel:
+    """
+    Image Control Panel, you can modify the level and window of the visualization.
+    """
+    def __init__(self, parent_frame, title, image_array, im_handle, row):
+
+        self.image_array = image_array
+        self.im_handle = im_handle
+
+        p1, p99 = np.percentile(image_array[np.isfinite(image_array)], [1, 99])
+
+        if not np.isfinite(p1) or not np.isfinite(p99) or p1 == p99:
+            p1, p99 = 0, 1
+
+        low, high = p1, p99
+        self.default_low = low
+        self.default_high = high
+
+        center = (low + high) / 2
+        width = max(high - low, 1e-6)
+
+        self.center_var = tk.DoubleVar(value=center)
+        self.width_var = tk.DoubleVar(value=width)
+
+        ttk.Label(parent_frame, text=title, font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=2)
+
+        ttk.Label(parent_frame, text="Center").grid(row=row, column=1, sticky="e")
+        self.center_scale = ttk.Scale(
+            parent_frame,
+            from_=low - width,
+            to=high + width,
+            orient="horizontal",
+            variable=self.center_var,
+            command=lambda v: self.apply_window_level(),
+            style="Dark.Horizontal.TScale"
+        )
+        self.center_scale.grid(row=row, column=2, sticky="ew", padx=5)
+
+        ttk.Label(parent_frame, text="Width").grid(row=row, column=3, sticky="e")
+        self.width_scale = ttk.Scale(
+            parent_frame,
+            from_=width/20,
+            to=width*2,
+            orient="horizontal",
+            variable=self.width_var,
+            command=lambda v: self.apply_window_level(),
+            style="Dark.Horizontal.TScale"
+        )
+        self.width_scale.grid(row=row, column=4, sticky="ew", padx=5)
+
+        auto_btn = ttk.Button(parent_frame, text="Auto", command=self.auto_window_level)
+        auto_btn.grid(row=row, column=5, padx=5)
+        
+        parent_frame.columnconfigure(2, weight=1)
+        parent_frame.columnconfigure(4, weight=1)
+
+        self.apply_window_level()
+
+    def apply_window_level(self):
+        center = self.center_var.get()
+        width = max(self.width_var.get(), 1e-9)
+        vmin = center - width/2
+        vmax = center + width/2
+
+        self.im_handle.set_clim(vmin, vmax)
+        self.im_handle.axes.figure.canvas.draw_idle()
+
+    def auto_window_level(self):
+        low, high = self.default_low, self.default_high
+        center = 0.5*(low + high)
+        width = high - low
+
+        self.center_var.set(center)
+        self.width_var.set(width)
+        self.apply_window_level()
+
 class TLRec_GUI:
 
-    def __init__(self, master):
+    def __init__(self, master, status_var=None):
 
-        #Crea la ventana principal
-        #global root
-        #root = tk.Tk()
-        global root
-        root = master
-        #root.title("TLRec")
-        #root.configure(background='gray20')
-        #root.state('zoomed')
-        #root.attributes('-fullscreen', True)
-        #root.geometry("1000x1000")
-
-        #style = ttk.Style()
-        #print(style.theme_names())
-
-        #style.theme_use('classic')
-
+        self.master = master
+        self.status_var = status_var
+        
         stl.configure_style()
         
         self.generate_load_files_frame()
@@ -46,10 +110,6 @@ class TLRec_GUI:
         self.generate_Modulation_Curve_frame()
         self.generate_PC_images_frame()
         self.initialize_variables()
-    
-        #root.protocol("WM_DELETE_WINDOW", quit)
-
-        #root.mainloop()
 
     def initialize_variables(self):
         
@@ -79,10 +139,12 @@ class TLRec_GUI:
             self.v0.set(default_TLRec_conf['v0'])
             self.n.set(default_TLRec_conf['m'])
             self.s.set(default_TLRec_conf['s'])
-
-    def quit():
-        root.quit()   # stops mainloop
-        root.destroy()
+        
+    def set_status(self, text):
+        """Update status bar."""
+        if self.status_var is not None:
+            self.status_var.set(text)
+            self.master.update_idletasks()
 
     def generate_option_frame(self):
 
@@ -93,32 +155,31 @@ class TLRec_GUI:
         "Fast FFT",
         "FFT"
         ]
-        global Frame4
-        Frame4 = ttk.Frame(root,borderwidth=2, relief='groove')
-        Frame4.grid(row = 3, column=0, columnspan=2)
+       
+        self.frame_recon = ttk.Frame(self.master,borderwidth=2, relief='groove')
+        self.frame_recon.grid(row = 3, column=0, columnspan=2)
 
-        global Frame5
-        Frame5= ttk.Frame(root)
-        Frame5.grid(row = 4, column=0, columnspan=2)
+        self.frame_coords = ttk.Frame(self.master)
+        self.frame_coords.grid(row = 4, column=0, columnspan=2)
 
-        label = tk.Label(Frame4, text = 'Reconstruction Parameters', width=30)
+        label = tk.Label(self.frame_recon, text = 'Reconstruction Parameters', width=30)
         label.grid(row = 0, column = 0)
-        self.Algorithm_ComboBoxLabel, self.Algorithm_ComboBox = wg.create_label_combobox(Frame4, label_text='Reconstruction Algorithm',row = 1,column =0, names = OPTIONS,state = 'disabled')
+        self.Algorithm_ComboBoxLabel, self.Algorithm_ComboBox = wg.create_label_combobox(self.frame_recon, label_text='Reconstruction Algorithm',row = 1,column =0, names = OPTIONS,state = 'disabled')
         self.Algorithm_ComboBox.current(0)
         
-        self.UploadButton = wg.create_button(Frame4,'Confirm Algorithm', 2, 0, state = 'disabled', command= lambda:self.Upload(self.Algorithm_ComboBox))
+        self.UploadButton = wg.create_button(self.frame_recon,'Confirm Algorithm', 2, 0, state = 'disabled', command= lambda:self.Upload(self.Algorithm_ComboBox))
 
-        self.RetrieveButton = wg.create_button(Frame4,'Retrieve', 2, 1, state = 'disabled', command= lambda:self.Run(self.Algorithm_ComboBox))
+        self.RetrieveButton = wg.create_button(self.frame_recon,'Retrieve', 2, 1, state = 'disabled', command= lambda:self.Run(self.Algorithm_ComboBox))
 
 
-        self.XLabel, self.X_position = wg.create_label_entry(Frame5, 'x coordinate', 0, 0,padx = 20, state='disable')
-        self.YLabel, self.Y_position = wg.create_label_entry(Frame5, 'y coordinate', 1, 0,padx = 20, state='disable')
+        self.XLabel, self.X_position = wg.create_label_entry(self.frame_coords, 'x coordinate', 0, 0,padx = 20, state='disable')
+        self.YLabel, self.Y_position = wg.create_label_entry(self.frame_coords, 'y coordinate', 1, 0,padx = 20, state='disable')
         
-        self.CompareButton = wg.create_button(Frame5, 'Update Modulation Curve', 2, 0, padx = 60, state = 'disable',command = lambda: self.Compare_Fit(self.images, self.images_reference, 
+        self.CompareButton = wg.create_button(self.frame_coords, 'Update Modulation Curve', 2, 0, padx = 60, state = 'disable',command = lambda: self.Compare_Fit(self.images, self.images_reference, 
         int(self.X_position.get()),int(self.Y_position.get()), rec_type=self.Algorithm_ComboBox))
 
     def generate_load_files_frame(self):
-        main_frame = ttk.Frame(root, style='TFrame')
+        main_frame = ttk.Frame(self.master, style='TFrame')
         main_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
 
         button_reference = wg.create_button(main_frame, "Load Reference Images", 0, 0, command = self.UploadReference)
@@ -129,10 +190,11 @@ class TLRec_GUI:
 
         Modify_configButton = wg.create_button(main_frame, 'Modify Default Parameters', 2, 0, padx = 60, command = self.Open_config_params)
         
-        ExitButton = wg.create_button(main_frame, "Exit", 3, 0, padx = 60, command=root.quit)
+        ExitButton = wg.create_button(main_frame, "Exit", 3, 0, padx = 60, command=self.master.quit)
 
 
     def UploadReference(self):
+        self.set_status("Loading reference images...")
         filename = filedialog.askopenfilename()
         self.filename_r_Entry.delete(0, tk.END)
         self.filename_r_Entry.insert(0, os.path.basename(filename))
@@ -140,9 +202,12 @@ class TLRec_GUI:
 
         #self.images_reference = io.imread(filename)
         self.button_images['state'] = 'normal'
+        
+        self.set_status("Reference images loaded!")
     
     def UploadAction(self):
 
+        self.set_status("Loading object images...")
         filename = filedialog.askopenfilename()
         self.filenameEntry.delete(0, tk.END)
         self.filenameEntry.insert(0, os.path.basename(filename))
@@ -176,6 +241,8 @@ class TLRec_GUI:
         self.Algorithm_ComboBoxLabel['state'] = 'normal'
         self.Algorithm_ComboBox['state'] = 'normal'
         self.UploadButton['state'] = 'normal'
+        
+        self.set_status("Object images loaded!")
 
     def Open_config_params(self):
 
@@ -223,15 +290,14 @@ class TLRec_GUI:
         params_window.destroy()
        
 
-
     def generate_raw_images_frame(self):
         """
         Generate the Frames where the object and reference images will be shown
         """
-        self.Frame_Ref_images = ttk.Frame(root, style='TFrame')
+        self.Frame_Ref_images = ttk.Frame(self.master, style='TFrame')
         self.Frame_Ref_images.grid(row=1, column=0)
 
-        self.Frame_images = ttk.Frame(root, style='TFrame')
+        self.Frame_images = ttk.Frame(self.master, style='TFrame')
         self.Frame_images.grid(row=1, column=1)
 
         # Initialize the canvas
@@ -241,8 +307,7 @@ class TLRec_GUI:
 
     def generate_Modulation_Curve_frame(self):
         
-        self.SinesPlot = ttk.Frame(root, style='TFrame')
-        #SinesPlot = tk.Frame(root)
+        self.SinesPlot = ttk.Frame(self.master, style='TFrame')
         self.SinesPlot.grid(row=5, column = 0, columnspan=2)
 
         self.initialize_Figure(self.SinesPlot, (3, 1), 1,0)
@@ -250,8 +315,9 @@ class TLRec_GUI:
         #self.Modulation_curve_canvas = self.create_canvas(self.SinesPlot, 0, 0, width=500, height=400) 
 
     def generate_PC_images_frame(self):
-        self.CanvasPlot = ttk.Frame(root, style='TFrame')
+        self.CanvasPlot = ttk.Frame(self.master, style='TFrame')
         self.CanvasPlot.grid(row=0, column= 2, rowspan =6, columnspan = 3)
+        self.CanvasPlot.columnconfigure(2, weight=0) #For the Wiener Filter panel
 
         self.initialize_Figure(self.CanvasPlot, (2, 2), 0,0)
         self.initialize_Figure(self.CanvasPlot, (2, 2), 0,1)
@@ -279,6 +345,23 @@ class TLRec_GUI:
         
         canvas.image = photo  
         canvas.create_image(0, 0, anchor = tk.NW, image=canvas.image)
+        
+    def on_pc_image_motion(self, event):
+        '''Coords and Values display in the status bar when mouse is over the PC images.'''
+        if event.inaxes is None or event.xdata is None or event.ydata is None:
+            return
+
+        for key, meta in getattr(self, "pc_image_meta", {}).items():
+            im = meta["im"]
+            if event.inaxes is im.axes:
+                arr = meta["data"]
+                x = int(round(event.xdata))
+                y = int(round(event.ydata))
+
+                if 0 <= y < arr.shape[0] and 0 <= x < arr.shape[1]:
+                    val = arr[y, x]
+                    self.set_status(f"{meta['label']}  x={x}, y={y}, value={val:.3g}")
+                break
 
     def save_image(self, data):
       files = [('All Files', '*.*'), 
@@ -295,13 +378,14 @@ class TLRec_GUI:
 
 
     def Upload(self, reconstruction):        
-
+        self.set_status(f"Preparing reconstruction with {reconstruction.get()}...")
         self.Compare_Fit(self.images, self.images_reference,  self.images.shape[2]//2, self.images.shape[1]//2, rec_type=reconstruction)
 
         self.CompareButton['state'] = 'normal'
         self.Y_position['state'] = 'normal'
         self.X_position['state'] = 'normal'
         self.RetrieveButton['state'] = 'normal'
+        self.set_status("Ready.")
 
     def Compare_Fit(self, images, images_reference, x_position, y_position, rec_type):
         if rec_type.get() == 'FFT':  
@@ -328,8 +412,8 @@ class TLRec_GUI:
         ax.set_title('Fit at ({},{})'.format(x_position, y_position))
         ax.scatter(x_data, y_data, color= "blue",marker= ".")
         ax.plot(x, y,label='Sample', color ="blue")
-        ax.scatter(x_data_r, y_data_r, color= "green",marker= ".")
-        ax.plot(x_r,y_r, label='Reference', color ="green")
+        ax.scatter(x_data_r, y_data_r, color= "red",marker= ".")
+        ax.plot(x_r,y_r, label='Reference', color ="red")
         ax.legend(loc='best')
         ax.set_ylabel("Intensity")
         ax.set_xlabel(r'$\chi$') 
@@ -353,11 +437,13 @@ class TLRec_GUI:
         canvas.draw()
         canvas.get_tk_widget().grid(row=row, column=column, ipadx=60, ipady=50,pady=10)
 
-    def Plot_Figure(self, frame, image, row, column, figsize, title):
+    def Plot_Figure(self, frame, image, row, column, figsize, title, store_attr=None):
         plt.close()
+        
         params = {"text.color" : "white",
           "xtick.color" : "white",
           "ytick.color" : "white"}
+        
         plt.rcParams.update(params)
 
         fig=Figure(figsize=figsize)
@@ -373,8 +459,87 @@ class TLRec_GUI:
         canvas1.get_tk_widget().grid(row=row, column=column, ipadx=90, ipady=20)
         toolbarFrame1 = tk.Frame(master=frame)
         toolbarFrame1.grid(row=row+1,column=column)
+        
+        if store_attr is not None:
+            setattr(self, store_attr, im)
+        
+        def onclick(event):
+            if event.xdata is not None and event.ydata is not None:
+                x = int(event.xdata)
+                y = int(event.ydata)
+                self.X_position.delete(0, tk.END)
+                self.X_position.insert(0, str(x))
+                self.Y_position.delete(0, tk.END)
+                self.Y_position.insert(0, str(y))
+                self.Compare_Fit(self.images, self.images_reference, x, y, self.Algorithm_ComboBox)
+
+        fig.canvas.mpl_connect("button_press_event", onclick)
+        
+    def create_phase_wiener_panel(self):
+
+        if hasattr(self, "phase_wiener_frame"):
+            self.phase_wiener_frame.destroy()
+
+        self.phase_wiener_frame = ttk.LabelFrame(
+            self.CanvasPlot,
+            text="Wiener Filter",
+            style="Custom.TLabelframe",
+            padding=(4, 4))
+
+        self.phase_wiener_frame.grid(
+            row=0, column=2,
+            sticky="n",
+            padx=5, pady=3)
+
+        # v0
+        ttk.Label(self.phase_wiener_frame, text="v0:", style="TLabel").grid(
+            row=0, column=0, sticky="e", padx=3, pady=1)
+        ttk.Entry(self.phase_wiener_frame, textvariable=self.v0, width=8).grid(
+            row=0, column=1, sticky="w", padx=3)
+        
+        # n
+        ttk.Label(self.phase_wiener_frame, text="n:", style="TLabel").grid(
+            row=1, column=0, sticky="e", padx=3, pady=1)
+        ttk.Entry(self.phase_wiener_frame, textvariable=self.n, width=5).grid(
+            row=1, column=1, sticky="w", padx=3)
+
+        # s
+        ttk.Label(self.phase_wiener_frame, text="s:", style="TLabel").grid(
+            row=2, column=0, sticky="e", padx=3, pady=1)
+        ttk.Entry(self.phase_wiener_frame, textvariable=self.s, width=8).grid(
+            row=2, column=1, sticky="w", padx=3)
+
+        ttk.Button(
+            self.phase_wiener_frame,
+            text="Apply",
+            command=self.reapply_wiener_to_phase,
+            style="TButton",
+            width=12
+        ).grid(row=3, column=0, columnspan=2, pady=(5, 2))
+
+        self.phase_wiener_frame.columnconfigure(1, weight=1)
+        
+    def reapply_wiener_to_phase(self):
+
+        v0 = float(self.v0.get())
+        n = int(self.n.get())
+        s = float(self.s.get())
+        px = float(self.pixel_size.get())
+        
+        DPC = self.last_diff
+
+        Phase_new = Apply_Phase_Wiener_filter(DPC, px, px, v0, n, s)
+
+        self.last_Phase = Phase_new
+
+        if hasattr(self, "im_phase"):
+            self.im_phase.set_data(Phase_new)
+            self.im_phase.axes.figure.canvas.draw_idle()
+
+        self.set_status(f"Wiener applied (v0={v0}, n={n}, s={s})")
 
     def Run(self, reconstruction):
+        
         global Diff_Phase, attenuation, transmission, Dark_Field, Phase
         #Compare_Fitting(images, images_reference,1,float(G2PeriodV.get()), 400, 400, FFT=False)
         if reconstruction.get() == 'Least Squares':
@@ -393,23 +558,104 @@ class TLRec_GUI:
             rec_type = 'FFT'
         if reconstruction.get() == 'Fast FFT':
             rec_type = 'Fast_FFT'
-        start_time = time.perf_counter()
-        Diff_Phase, attenuation, transmission, Dark_Field, Phase, Phase_Stepping_Curve_reference, Phase_Stepping_Curve_object = Modulation_Curve_Reconstruction(self.images, self.images_reference,
-        self.G2Period_default.get(),self.DSG1_Default.get(), self.DG1G2_Default.get(), self.DOG1_Default.get(), self.Energy_Default.get(), self.pixel_size.get(),type=rec_type, unwrap_phase=False)
-        end_time = time.perf_counter()
-        print("time: {} s".format(end_time-start_time))
-        Phase = Apply_Phase_Wiener_filter(Diff_Phase, self.pixel_size.get(), self.pixel_size.get(), self.v0.get(), self.n.get(), self.s.get())
+            
+        self.set_status(f"Running reconstruction ({reconstruction.get()})...")
         
-        self.Plot_Figure(self.CanvasPlot, Diff_Phase, 0, 0, (3,3), 'Phase Gradient')
-        self.Plot_Figure(self.CanvasPlot, Phase, 0, 1, (3,3), 'Integrated Phase')
-        self.Plot_Figure(self.CanvasPlot, transmission, 2, 0, (3,3), 'Transmission')
-        self.Plot_Figure(self.CanvasPlot, Dark_Field, 2, 1, (3,3), 'Dark Field')
-    
-        bt1 = wg.create_button(self.CanvasPlot, 'Save Image', 1,0, command=  lambda : self.save_image(Diff_Phase))
-        bt2 = wg.create_button(self.CanvasPlot, 'Save Image', 1,1, command=  lambda : self.save_image(Phase))
-        bt3 = wg.create_button(self.CanvasPlot, 'Save Image', 3,0, command=  lambda : self.save_image(transmission))
-        bt4 = wg.create_button(self.CanvasPlot, 'Save Image', 3,1, command=  lambda : self.save_image(Dark_Field))
+        # Disabled button during reconstruction
+        self.RetrieveButton.config(state="disabled")
+        self.master.update_idletasks()
         
-    
+        try:
+            start_time = time.perf_counter()
+            Diff_Phase, transmission, Dark_Field, Phase, _, _ = Modulation_Curve_Reconstruction(self.images, self.images_reference,
+            self.G2Period_default.get(),self.DSG1_Default.get(), self.DG1G2_Default.get(), self.DOG1_Default.get(), self.Energy_Default.get(), self.pixel_size.get(),type=rec_type, unwrap_phase=False)
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+            print("time: {} s".format(elapsed_time))
+            
+            self.last_Phase = Phase
+            self.last_diff = Diff_Phase
+            
+            Phase = Apply_Phase_Wiener_filter(Diff_Phase, self.pixel_size.get(), self.pixel_size.get(), self.v0.get(), self.n.get(), self.s.get())
+            
+            self.Plot_Figure(self.CanvasPlot, Diff_Phase, 0, 0, (3,3), 'Phase Gradient', store_attr="im_dpc")
+            self.Plot_Figure(self.CanvasPlot, Phase, 0, 1, (3,3), 'Integrated Phase', store_attr="im_phase")
+            self.create_phase_wiener_panel()
+            self.Plot_Figure(self.CanvasPlot, transmission, 2, 0, (3,3), 'Transmission', store_attr="im_tr")
+            self.Plot_Figure(self.CanvasPlot, Dark_Field, 2, 1, (3,3), 'Dark Field', store_attr="im_df")
+        
+            bt1 = wg.create_button(self.CanvasPlot, 'Save Image', 1,0, command=  lambda : self.save_image(Diff_Phase))
+            bt2 = wg.create_button(self.CanvasPlot, 'Save Image', 1,1, command=  lambda : self.save_image(Phase))
+            bt3 = wg.create_button(self.CanvasPlot, 'Save Image', 3,0, command=  lambda : self.save_image(transmission))
+            bt4 = wg.create_button(self.CanvasPlot, 'Save Image', 3,1, command=  lambda : self.save_image(Dark_Field))
+            
+        finally:
+            self.RetrieveButton.config(state="normal")
+            self.set_status(f"Reconstruction finished in {elapsed_time:.2f} s.")
+            
+        if hasattr(self, "wl_master_frame"):
+            self.wl_master_frame.destroy()
+
+        self.wl_master_frame = ttk.Frame(self.CanvasPlot)
+        self.wl_master_frame.grid(row=4, column=0, columnspan=3, sticky="ew", pady=10)
+        
+        self.image_controls = {}
+
+        self.image_controls["dpc"] = ImageControlPanel(
+            parent_frame=self.wl_master_frame,
+            title="Phase Gradient",
+            image_array=Diff_Phase,
+            im_handle=self.im_dpc,
+            row=0)
+
+        self.image_controls["phase"] = ImageControlPanel(
+            parent_frame=self.wl_master_frame,
+            title="Integrated Phase",
+            image_array=Phase,
+            im_handle=self.im_phase,
+            row=1)
+
+        self.image_controls["tr"] = ImageControlPanel(
+            parent_frame=self.wl_master_frame,
+            title="Transmission",
+            image_array=transmission,
+            im_handle=self.im_tr,
+            row=2)
+
+        self.image_controls["df"] = ImageControlPanel(
+            parent_frame=self.wl_master_frame,
+            title="Dark Field",
+            image_array=Dark_Field,
+            im_handle=self.im_df,
+            row=3)
+        
+        self.pc_image_meta = {
+            "phasegrad": {
+                "label": "Phase Gradient",
+                "im": self.im_dpc,
+                "data": Diff_Phase,
+            },
+            "phase": {
+                "label": "Integrated Phase",
+                "im": self.im_phase,
+                "data": Phase,
+            },
+            "trans": {
+                "label": "Transmission",
+                "im": self.im_tr,
+                "data": transmission,
+            },
+            "df": {
+                "label": "Dark Field",
+                "im": self.im_df,
+                "data": Dark_Field,
+            },
+        }
+        
+        for meta in self.pc_image_meta.values():
+            canvas = meta["im"].figure.canvas
+            canvas.mpl_connect("motion_notify_event", self.on_pc_image_motion)
+
+            
 if __name__ == "__main__":
     TLRec_GUI()

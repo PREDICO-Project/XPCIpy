@@ -153,15 +153,20 @@ def Modulation_Curve_Reconstruction(images, images_reference,G2Period,DSO, DOD, 
     DPC = utils.check_limits_DPC(DPC) 
     
   DF = v/v_r
-  Abs = -np.log(o/o_r)
+  #Abs = -np.log(o/o_r)
   Transmission = o/o_r
+  
+  DPC = utils.fill_nans_zero(DPC)
+  DF = utils.fill_nans_zero(DF)
 
+  Transmission = utils.fill_nans_zero(Transmission)
+  
   Phase = utils.Get_Phase(DPC, G2Period,DG1O,DSO, wavelength, pixel_size,DOD)
   Phase_Stepping_Curve_reference = p_r
   Phase_Stepping_Curve_reference = utils.check_limits_DPC(Phase_Stepping_Curve_reference)
   Phase_Stepping_Curve_object = p
   Phase_Stepping_Curve_object = utils.check_limits_DPC(Phase_Stepping_Curve_object)
-  return DPC, Abs, Transmission, DF, Phase, Phase_Stepping_Curve_reference, Phase_Stepping_Curve_object
+  return DPC, Transmission, DF, Phase, Phase_Stepping_Curve_reference, Phase_Stepping_Curve_object
 
 
 

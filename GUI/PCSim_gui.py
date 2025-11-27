@@ -1,7 +1,7 @@
 import tkinter as tk
 from GUI.styles import Styles as stl
 from GUI.widgets import Widget as wg
-from tkinter import ttk, filedialog
+from tkinter import ttk
 from tkinter.filedialog import asksaveasfilename
 import os
 import tifffile
@@ -20,6 +20,7 @@ import src.PCSim.detector as detector
 import src.PCSim.check_Talbot as check_Talbot
 from GUI.TLRec_gui import TLRec_GUI
 from GUI.text import check_TL_text
+from GUI.widgets import VerticalScrolledFrame as vsf
 
 
 class PCSim_gui:
@@ -29,47 +30,50 @@ class PCSim_gui:
         self.parent_path = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
         self.granpa_path = os.path.abspath(os.path.join(self.parent_path, os.pardir))
         self.granpa2_path = os.path.abspath(os.path.join(self.granpa_path, os.pardir))
-        self.root_path = os.path.abspath(os.path.join(self.granpa2_path, os.pardir))
-        #Crea la ventana principal
-        #global root
-        #root = tk.Tk()
-        self.root_path
-        global root
-        root = master
-        #root.title("PCSim Inline")
-        #root.configure(background='gray20')
+        #self.root_path = os.path.abspath(os.path.join(self.granpa2_path, os.pardir)) # Not used really
 
-        #style = ttk.Style()
-        #print(style.theme_names())
-
-        #style.theme_use('classic')
-        global Beam_Shape_OPTIONS, Beam_Spectrum_OPTIONS, Object_OPTIONS, Image_OPTIONS
-        spectra_path = os.path.join(self.parent_path, 'Resources','Spectra')
-        Beam_Spectrum_OPTIONS = sorted([f for f in os.listdir(spectra_path) if os.path.isfile(os.path.join(spectra_path, f))])
-        Beam_Spectrum_OPTIONS.append("Monoenergetic")
-        Beam_Shape_OPTIONS = ["Plane", "Conical"]
-        Object_OPTIONS = ["Sphere",  "Cylinder"]
-        Image_OPTIONS = ["Ideal", "Realistic"]
-
+        self.master = master
 
         stl.configure_style()
 
-        # Create tab container
-        self.tab_container = ttk.Notebook(root)
-        self.tab_container.grid(row=0, column=1, sticky="nsew", padx=10, pady=5)
+        self.master.grid_rowconfigure(0, weight=1)
+        self.master.grid_rowconfigure(1, weight=0)
+        self.master.grid_columnconfigure(0, weight=1)
+
+        # --- STATUS BAR ---
+        self.status_var = tk.StringVar(value="Ready")
+        status_bar = ttk.Label(
+            self.master,
+            textvariable=self.status_var,
+            relief="sunken",
+            anchor="w"
+        )
+        status_bar.grid(row=1, column=0, sticky="ew")
+
+        # --- NOTEBOOK ---
+        self.tab_container = ttk.Notebook(self.master)
+    
+        self.tab_container.grid(row=0, column=0, sticky="nsew")
+
+        global Beam_Shape_OPTIONS, Beam_Spectrum_OPTIONS, Object_OPTIONS, Image_OPTIONS
+        spectra_path = os.path.join(self.parent_path, 'Resources', 'Spectra')
+        Beam_Spectrum_OPTIONS = sorted([f for f in os.listdir(spectra_path)
+                                        if os.path.isfile(os.path.join(spectra_path, f))])
+        Beam_Spectrum_OPTIONS.append("Monoenergetic")
+        Beam_Shape_OPTIONS = ["Plane", "Conical"]
+        Object_OPTIONS = ["Sphere", "Cylinder"]
+        Image_OPTIONS = ["Ideal", "Realistic"]
 
         self.initialize_vars()
         self.create_tabs()
-    
-        #root.protocol("WM_DELETE_WINDOW", quit)
-        #root.mainloop()
+        
 
     def create_tabs(self):
         # Create a Frame for each tab
-        self.TLRec_tab = ttk.Frame(self.tab_container)
-        self.inline_tab = ttk.Frame(self.tab_container)
-        self.check_TL_tab = ttk.Frame(self.tab_container)
-        self.TL_tab = ttk.Frame(self.tab_container)
+        self.TLRec_tab = ttk.Frame(self.tab_container, style="TFrame")
+        self.inline_tab = ttk.Frame(self.tab_container, style="TFrame")
+        self.check_TL_tab = ttk.Frame(self.tab_container, style="TFrame")
+        self.TL_tab = ttk.Frame(self.tab_container, style="TFrame")
 
         # Add tabs to the tabs container
         self.tab_container.add(self.TLRec_tab, text = 'TLRec')
@@ -83,15 +87,43 @@ class PCSim_gui:
         self.populate_TL_tab()
         
     def populate_TLRec_tab(self):
-        TLRec_GUI(self.TLRec_tab)
+        scrollframe = vsf(self.TLRec_tab)
+        scrollframe.grid(row=0, column=0, sticky="nsew")
+        container = scrollframe.interior
+        self.TLRec_tab.grid_rowconfigure(0, weight=1)
+        self.TLRec_tab.grid_columnconfigure(0, weight=1)
+        #self.TLRec_tab.grid_rowconfigure(0, weight=1)
+        #self.TLRec_tab.grid_columnconfigure(0, weight=1)
+        #scrollframe = vsf(self.TLRec_tab)
+        #scrollframe.grid(row=0, column=0, sticky="nsew")
+        TLRec_GUI(container, status_var=self.status_var)
+        #TLRec_GUI(self.TLRec_tab)
 
     def populate_inline_tab(self):
         
-        parameters_frame = ttk.Frame(self.inline_tab, style='TFrame')
+        scrollframe = vsf(self.inline_tab)
+        scrollframe.grid(row=0, column=0, sticky="nsew")
+        container = scrollframe.interior
+        
+        self.inline_tab.grid_rowconfigure(0, weight=1)
+        self.inline_tab.grid_columnconfigure(0, weight=1)
+        self.inline_tab.grid_columnconfigure(1, weight=0)
+        self.inline_tab.grid_columnconfigure(2, weight=1)
+        
+        container.grid_rowconfigure(0, weight=1)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_columnconfigure(1, weight=1)
+        container.grid_columnconfigure(2, weight=2)
+        parameters_frame = ttk.Frame(container, style='TFrame')
         parameters_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
+        
+        #parameters_frame.grid_rowconfigure(0, weight=1)
+        #parameters_frame.grid_columnconfigure(0, weight=1)
 
-        self.i_results_frame = ttk.Frame(self.inline_tab, style='TFrame')
+        self.i_results_frame = ttk.Frame(container, style='TFrame')
         self.i_results_frame.grid(row = 0, column = 2, rowspan=12,  sticky='nsew')
+        self.i_results_frame.grid_rowconfigure(0, weight=1)
+        self.i_results_frame.grid_columnconfigure(0, weight=1)
 
         self.initialize_Figure(self.i_results_frame, (3,3), 0,0)
 
@@ -110,17 +142,25 @@ class PCSim_gui:
         self.ResolutionL,_ = wg.create_label_entry(parameters_frame, 'Detector Resolution (FWHM microns)', 12, 0,textvariable=self.i_FWHM_detector,padx = 20)
         self.RunButton = wg.create_button(parameters_frame, 'Run', 13,0,command = self.RunInline)
 
-        ExitButton = wg.create_button(parameters_frame, "Exit", 14, 0, padx = 60, command=root.quit)
+        ExitButton = wg.create_button(parameters_frame, "Exit", 14, 0, padx = 60, command=self.master.quit)
 
     def populate_checkTL_tab(self):
         
+        scrollframe = vsf(self.check_TL_tab)
+        scrollframe.grid(row=0, column=0, sticky="nsew")
+        container = scrollframe.interior
+        
+        self.check_TL_tab.grid_rowconfigure(0, weight=1)
+        self.check_TL_tab.grid_columnconfigure(0, weight=0)
+        self.check_TL_tab.grid_columnconfigure(1, weight=0)
+        self.check_TL_tab.grid_columnconfigure(2, weight=1)
         Grating_OPTIONS = ["Custom", "Phase pi/2", "Phase pi"]
 
-        parameters_frame = ttk.Frame(self.check_TL_tab, style='TFrame')
+        parameters_frame = ttk.Frame(container, style='TFrame')
         parameters_frame.bind("<Button-1>", self.modify_TL_dist)
         parameters_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
 
-        self.c_results_frame = ttk.Frame(self.check_TL_tab, style='TFrame')
+        self.c_results_frame = ttk.Frame(container, style='TFrame')
         self.c_results_frame.grid(row = 0, column = 2, rowspan=12,  sticky='nsew')
 
         self.initialize_Figure(self.c_results_frame, (3,3), 0,0)
@@ -141,7 +181,7 @@ class PCSim_gui:
         #self.ResolutionL,_ = wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 9, 0,textvariable=self.c_resolution,padx = 20)
         self.RunButton = wg.create_button(parameters_frame, 'Run', 12,0,command = self.RunCheckTL)
 
-        ExitButton = wg.create_button(parameters_frame, "Exit", 13, 0, padx = 60, command=root.quit)
+        ExitButton = wg.create_button(parameters_frame, "Exit", 13, 0, padx = 60, command=self.master.quit)
         font = {'family': 'serif',
         'color':  'lightgray',
         'weight': 'normal',
@@ -155,20 +195,27 @@ class PCSim_gui:
         text = fig_text.text(0.5, 0.5,check_TL_text, ha='center', va='center', bbox=dict(facecolor='#333333', alpha=0.5), fontdict=font)
         canvas.figure = fig_text
         canvas.draw()
-        #checkTL_text = wg.create_text_area(parameters_frame, 13,0)
-        #checkTL_text.config(state='normal')
-        #checkTL_text.insert(tk.END, check_TL_text)
-        #checkTL_text.config(state='disabled')
+ 
         
     def populate_TL_tab(self):
         
         Grating_OPTIONS = ["Phase pi/2", "Phase pi"]
         Movable_OPTIONS = ["G1", "G2"]
         
-        parameters_frame = ttk.Frame(self.TL_tab, style='TFrame')
+        scrollframe = vsf(self.TL_tab)
+        scrollframe.grid(row=0, column=0, sticky="nsew")
+        
+        container = scrollframe.interior
+        
+        self.TL_tab.grid_rowconfigure(0, weight=1)
+        self.TL_tab.grid_columnconfigure(0, weight=0)
+        self.TL_tab.grid_columnconfigure(1, weight=0)
+        self.TL_tab.grid_columnconfigure(2, weight=1)
+        
+        parameters_frame = ttk.Frame(container, style='TFrame')
         parameters_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
         parameters_frame.bind("<Button-1>", self.modify_DOD)
-        self.TL_results_frame = ttk.Frame(self.TL_tab, style='TFrame')
+        self.TL_results_frame = ttk.Frame(container, style='TFrame')
         self.TL_results_frame.grid(row = 0, column = 2, rowspan=12,  sticky='nsew')
 
         self.initialize_Figure(self.TL_results_frame, (3,3), 0,0)
@@ -198,7 +245,7 @@ class PCSim_gui:
         wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 22, 0,textvariable=self.TL_resolution,padx = 20)
         wg.create_button(parameters_frame, 'Run', 23,0,command = self.RunTL)
 
-        ExitButton = wg.create_button(parameters_frame, "Exit", 24, 0, padx = 60, command=root.quit)
+        ExitButton = wg.create_button(parameters_frame, "Exit", 24, 0, padx = 60, command=self.master.quit)
 
     def initialize_vars(self):
 
@@ -364,6 +411,7 @@ class PCSim_gui:
 
         
     def RunInline(self):
+        self.set_status("Running inline simulation...")
         n = self.i_n.get()
         DSO = self.i_DSO.get()
         DOD = self.i_DOD.get()
@@ -414,9 +462,10 @@ class PCSim_gui:
         
         self.Plot_Figure(self.i_results_frame, Intensity,0,0, (3,3), 'Inline Simulation')
         bt1 = wg.create_button(self.i_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensity))
+        self.set_status("Inline simulation finished!")
   
     def RunCheckTL(self):
-
+        self.set_status("Running Talbot carpet simulation...")
         n = self.c_n.get()
         pixel_size = self.c_pixel_size.get() #um
         FWHM_source = self.c_FWHM_source.get()
@@ -447,15 +496,14 @@ class PCSim_gui:
             title = 'pi/2-phase Grating'
 
         Intensities= check_Talbot.Talbot_carpet(n, MySource, Period, DC, multiples, iterations, grating_type,pixel_size, Energy, material=Material, grating_height= bar_height)
-
-        
         
         self.Plot_check_TL(self.c_results_frame, Intensities, 0, 0, (3,3), title, multiples, n)
         bt1 = wg.create_button(self.c_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensities))
-
+        self.set_status("Talbot carpet simulation finished!")
     
 
     def RunTL(self):
+        self.set_status("Running Talbot-Lau simulation...")
         n = self.TL_n.get()
         pixel_size = self.TL_pixel_size.get()
         FWHM_source = self.TL_FWHM_source.get()
@@ -463,11 +511,11 @@ class PCSim_gui:
         Beam_Spectrum = os.path.splitext(self.TL_Beam_Spectrum.get())[0]
         design_energy = self.TL_beam_energy.get()
 
-        DSG1 = self.TL_DSO.get() #Distance source-object in cm, 15 cm Experimento.   16.69 con 23 keV y 6 um de periodo
-        DOG1 = self.TL_DOG1.get() # Object-G1 distance in cm
+        DSG1 = self.TL_DSO.get()
+        DOG1 = self.TL_DOG1.get()
         object = self.TL_Object.get()
         radius = self.TL_radius.get()
-        inner_radius = self.i_inner_radius.get()
+        inner_radius = self.TL_inner_radius.get()
         material= os.path.splitext(self.TL_material.get())[0]
         Period_G1 = self.TL_Period_G1.get()
         G1_Phase = self.TL_G1_Phase.get()
@@ -522,7 +570,7 @@ class PCSim_gui:
         self.Plot_Figure(self.TL_results_frame, i[0,:,:], 1, 0, (3,3), 'One Projection', columnspan=2)
         bt1 = wg.create_button(self.TL_results_frame, 'Save Stack Object Images', 2,0, command=  lambda : self.save_stack_image(i))
         bt2 = wg.create_button(self.TL_results_frame, 'Save Stack Reference Images', 2,1, command=  lambda : self.save_stack_image(ir))
-
+        self.set_status("Talbot-Lau simulation finished!")
         #DPC, Phase, At, Transmission, DF = DPC_Retrieval(ib, ibr, G2Period, DSO, distance,0,mean_energy)
 
     def modify_DOD(self, event):
@@ -607,7 +655,8 @@ class PCSim_gui:
           "ytick.color" : "white",
           "axes.labelcolor": "white",
           "axes.grid": True,
-          "legend.labelcolor": 'black'}
+          #"legend.labelcolor": 'black'
+          }
         plt.rcParams.update(params)
         plt.tight_layout()
 
@@ -659,7 +708,7 @@ class PCSim_gui:
         fig.set_facecolor("#333333")
 
         canvas.draw()
-        canvas.get_tk_widget().grid(row=row, column=column, ipadx=60, ipady=50)
+        canvas.get_tk_widget().grid(row=row, column=column, ipadx=60, ipady=50,sticky='nsew')
 
 
     def Plot_Figure(self, frame, image, row, column, figsize, title, columnspan=1):
@@ -765,4 +814,8 @@ class PCSim_gui:
         data = np.stack(data, axis =0)
         tifffile.imwrite(file, data.astype(np.float32), photometric='minisblack')
         #imageio.volwrite(file,im)
+    
+    def set_status(self, text):
+        self.status_var.set(text)
+        self.master.update_idletasks()
         
