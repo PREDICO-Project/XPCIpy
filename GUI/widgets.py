@@ -1,6 +1,7 @@
 from tkinter import ttk
 import tkinter as tk
 import os
+import platform
 
 class Widget:
 
@@ -122,6 +123,9 @@ class VerticalScrolledFrame(ttk.Frame):
 
         self.interior = interior = ttk.Frame(canvas, style="TFrame")
         interior_id = canvas.create_window(0, 0, window=interior, anchor=tk.NW)
+        
+        system = platform.system()
+        #print(system)
 
         def _configure_interior(event):
             size = (interior.winfo_reqwidth(), interior.winfo_reqheight())
@@ -138,7 +142,38 @@ class VerticalScrolledFrame(ttk.Frame):
 
         canvas.bind('<Configure>', _configure_canvas)
 
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        #def _on_mousewheel(event):
+            #canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        def _on_mousewheel(event):
+            if system == 'Windows':
+                delta = int(-1 * (event.delta / 120))
+            elif system == 'Darwin':
+                delta = int(-1 * (event.delta))
+            else:
+                if event.num == 4:
+                    delta = -1
+                elif event.num == 5:
+                    delta = 1
+                else:
+                    delta = 0
+
+            if delta != 0:
+                canvas.yview_scroll(delta, "units")
+
+        def _bind_mousewheel(event):
+            if system in ('Windows', 'Darwin'):
+                canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            else:
+                canvas.bind_all("<Button-4>", _on_mousewheel)
+                canvas.bind_all("<Button-5>", _on_mousewheel)
+
+        def _unbind_mousewheel(event):
+            if system in ('Windows', 'Darwin'):
+                canvas.unbind_all("<MouseWheel>")
+            else:
+                canvas.unbind_all("<Button-4>")
+                canvas.unbind_all("<Button-5>")
+                
+        canvas.bind("<Enter>", _bind_mousewheel)
+        canvas.bind("<Leave>", _unbind_mousewheel)
