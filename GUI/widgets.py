@@ -177,3 +177,19 @@ class VerticalScrolledFrame(ttk.Frame):
                 
         canvas.bind("<Enter>", _bind_mousewheel)
         canvas.bind("<Leave>", _unbind_mousewheel)
+
+class ToggleButton(ttk.Button):
+    def __init__(self, master, text, variable, **kwargs):
+        super().__init__(master, text=text, command=self.toggle, **kwargs)
+        self.variable = variable
+        self.update_color()
+
+    def toggle(self):
+        self.variable.set(not self.variable.get())
+        self.update_color()
+
+    def update_color(self):
+        if self.variable.get():
+            self.config(style="ToggleOn.TButton")
+        else:
+            self.config(style="ToggleOff.TButton")

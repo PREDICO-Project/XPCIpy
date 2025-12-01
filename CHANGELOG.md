@@ -72,6 +72,17 @@ Features:
 ### 3.5. Fixed Matplotlib RC Error
 - Removed invalid rcParam `legend.labelcolor` for compatibility with older Matplotlib installs.
 
+### 3.6. Added Presets
+- Added new buttons to save/load JSON files with the configuration of a simulation. Now is easier to reproduce simulations.
+- Simulation settings can now be exported and reloaded, greatly improving reproducibility and workflow efficiency.
+
+### 3.7. Added Option to Export a Reproducible ZIP Package
+- Implemented an automated system to generate a ZIP file containing all relevant simulation data:
+  - Input parameters (JSON preset)
+  - Output images and numerical results
+  - Metadata (timestamp, system info)
+- This feature provides complete reproducibility and facilitates sharing or archiving simulation runs.
+
 ---
 
 ## 4. Layout Fixes and Stability

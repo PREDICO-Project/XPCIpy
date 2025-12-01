@@ -1,1 +1,8 @@
-{"G1Period": 6.0, "G2Period": 6.0, "Design_Energy": 35.0, "DSG1": 25.0, "DOG1": 0.0, "DG1G2": 25.0, "Detetor_pixel_size": 0.02, "v0": 0.05, "m": 1, "s": 500000.0}
+{"G1Period": 6.0, 
+"G2Period": 6.0, 
+"Design_Energy": 35.0, 
+"DSG1": 25.0, "DOG1": 0.0, 
+"DG1G2": 25.0, 
+"Detetor_pixel_size": 0.02, 
+"v0": 0.05, "m": 1, 
+"s": 500000.0}

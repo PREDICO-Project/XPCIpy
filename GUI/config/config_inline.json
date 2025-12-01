@@ -3,15 +3,19 @@
     "pixel_size": 1, 
     "DOD": 20,
     "DSO": 20,
+    "FWHM_source": 10,
     "Beam_Shape": "Plane",
     "Beam_Spectrum": "Monoenergetic",
     "energy": 25,
     "Object": "Sphere",
     "radius": 200,
+    "inner_radius": 0,
+    "orientation": "Vertical",
     "material": "H2O.txt",
     "xshift": 0,
     "yshift": 0,
     "image_option": "Ideal",
     "detector_pixel_size": 10,
-    "resolution": 20
+    "resolution": 20,
+    "FWHM_detector": 10
 }

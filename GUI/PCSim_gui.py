@@ -2,7 +2,7 @@ import tkinter as tk
 from GUI.styles import Styles as stl
 from GUI.widgets import Widget as wg
 from tkinter import ttk
-from tkinter.filedialog import asksaveasfilename
+from tkinter.filedialog import asksaveasfilename, askopenfilename
 import os
 import tifffile
 from PIL import Image
@@ -21,6 +21,10 @@ import src.PCSim.check_Talbot as check_Talbot
 from GUI.TLRec_gui import TLRec_GUI
 from GUI.text import check_TL_text
 from GUI.widgets import VerticalScrolledFrame as vsf
+from GUI.widgets import ToggleButton
+import zipfile
+import datetime
+import io
 
 
 class PCSim_gui:
@@ -140,9 +144,14 @@ class PCSim_gui:
         self.DetectorL,_ = wg.create_label_combobox(parameters_frame, label_text='Image',row = 10 ,column =0, textvariable = self.i_image_option,names = Image_OPTIONS)
         self.PixelDetectorL,_ = wg.create_label_entry(parameters_frame, 'Detector Pixel Size (microns)', 11, 0,textvariable=self.i_detector_pixel_size,padx = 20)
         self.ResolutionL,_ = wg.create_label_entry(parameters_frame, 'Detector Resolution (FWHM microns)', 12, 0,textvariable=self.i_FWHM_detector,padx = 20)
-        self.RunButton = wg.create_button(parameters_frame, 'Run', 13,0,command = self.RunInline)
+        #self.zip_checkbox_inline = wg.create_checkbox(parameters_frame, text="Create ZIP with simulation data", row=13, column=0, variable=self.i_zip_var, sticky="w")
+        ToggleButton(parameters_frame, text="Create ZIP with simulation data", variable=self.i_zip_var).grid(row=13, column=0, pady=5)
+        self.RunButton = wg.create_button(parameters_frame, 'Run', 14,0,command = self.RunInline)
+        
+        wg.create_button(parameters_frame, "Save preset", 15, 0, command=self.save_preset_Inline)
+        wg.create_button(parameters_frame, "Load preset", 15, 1, command=self.load_preset_Inline)
 
-        ExitButton = wg.create_button(parameters_frame, "Exit", 14, 0, padx = 60, command=self.master.quit)
+        ExitButton = wg.create_button(parameters_frame, "Exit", 16, 0, padx = 60, command=self.master.quit)
 
     def populate_checkTL_tab(self):
         
@@ -243,9 +252,14 @@ class PCSim_gui:
         wg.create_label_combobox(parameters_frame, label_text='Image',row = 20 ,column =0, textvariable = self.TL_image_option,names = Image_OPTIONS)
         wg.create_label_entry(parameters_frame, 'Detector Pixel Size (microns)', 21, 0,textvariable=self.TL_detector_pixel_size,padx = 20)
         wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 22, 0,textvariable=self.TL_resolution,padx = 20)
-        wg.create_button(parameters_frame, 'Run', 23,0,command = self.RunTL)
+        ToggleButton(parameters_frame, text="Create ZIP with simulation data", variable=self.TL_zip_var).grid(row=23, column=0, pady=5)
+        
+        wg.create_button(parameters_frame, 'Run', 24,0,command = self.RunTL)
+        
+        wg.create_button(parameters_frame, "Save preset", 25, 0, command=self.save_preset_TL)
+        wg.create_button(parameters_frame, "Load preset", 25, 1, command=self.load_preset_TL)
 
-        ExitButton = wg.create_button(parameters_frame, "Exit", 24, 0, padx = 60, command=self.master.quit)
+        ExitButton = wg.create_button(parameters_frame, "Exit", 26, 0, padx = 60, command=self.master.quit)
 
     def initialize_vars(self):
 
@@ -272,31 +286,32 @@ class PCSim_gui:
         self.i_orientation = tk.StringVar()
         self.i_FWHM_detector = tk.DoubleVar()
         self.i_detector_pixel_size = tk.DoubleVar()
+        self.i_zip_var = tk.BooleanVar(value=False)
 
-        
         with open(os.path.join(config_path, 'config_inline.json')) as json_path:
             #default_TLRec_conf = json.load(os.path.join(config_path, 'config_inline.json'))
 
             default_inline_conf = json.load(json_path)
         
+
             self.i_n.set(default_inline_conf['n'])
             self.i_pixel_size.set(default_inline_conf['pixel_size'])
             self.i_DSO.set(default_inline_conf['DSO'])
             self.i_DOD.set(default_inline_conf['DOD'])
-            self.i_FWHM_source.set(10.)
+            self.i_FWHM_source.set(default_inline_conf['FWHM_source'])
             self.i_Beam_Shape.set(default_inline_conf['Beam_Shape'])
             self.i_Beam_Spectrum.set(default_inline_conf['Beam_Spectrum'])
             self.i_beam_energy.set(default_inline_conf['energy'])
             self.i_Object.set(default_inline_conf['Object'])
             self.i_radius.set(default_inline_conf['radius'])
-            self.i_inner_radius.set(0.)
+            self.i_inner_radius.set(default_inline_conf['inner_radius'])
             self.i_xshift.set(default_inline_conf['xshift'])
             self.i_yshift.set(default_inline_conf['yshift'])
             self.i_material.set(default_inline_conf['material'])
             self.i_image_option.set(default_inline_conf['image_option'])
-            self.i_orientation.set('Vertical')
+            self.i_orientation.set(default_inline_conf['orientation'])
             self.i_resolution.set(default_inline_conf['resolution'])
-            self.i_FWHM_detector.set(30.)
+            self.i_FWHM_detector.set(default_inline_conf['FWHM_detector'])
             self.i_detector_pixel_size.set(default_inline_conf['detector_pixel_size']) #um
 
         # Check TL
@@ -313,6 +328,7 @@ class PCSim_gui:
         self.c_iterations = tk.IntVar()
         self.c_grating_def = tk.StringVar()
         self.c_Talbot_distance = tk.DoubleVar()
+        self.c_zip_var = tk.BooleanVar(value=False)
         #self.c_image_option = tk.StringVar()
         #self.c_resolution = tk.IntVar()
 
@@ -370,6 +386,7 @@ class PCSim_gui:
         self.TL_resolution = tk.DoubleVar() #um
         self.TL_detector_pixel_size = tk.IntVar()
         self.TL_image_option = tk.StringVar()
+        self.TL_zip_var = tk.BooleanVar(value=False)
 
         with open(os.path.join(config_path, 'config_TLSim.json')) as json_path:
             #default_TLRec_conf = json.load(os.path.join(config_path, 'config_inline.json'))
@@ -462,8 +479,11 @@ class PCSim_gui:
         
         self.Plot_Figure(self.i_results_frame, Intensity,0,0, (3,3), 'Inline Simulation')
         bt1 = wg.create_button(self.i_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensity))
+        
+        if self.i_zip_var.get():
+            self.export_inline_zip(Intensity)
+            
         self.set_status("Inline simulation finished!")
-  
     def RunCheckTL(self):
         self.set_status("Running Talbot carpet simulation...")
         n = self.c_n.get()
@@ -570,6 +590,10 @@ class PCSim_gui:
         self.Plot_Figure(self.TL_results_frame, i[0,:,:], 1, 0, (3,3), 'One Projection', columnspan=2)
         bt1 = wg.create_button(self.TL_results_frame, 'Save Stack Object Images', 2,0, command=  lambda : self.save_stack_image(i))
         bt2 = wg.create_button(self.TL_results_frame, 'Save Stack Reference Images', 2,1, command=  lambda : self.save_stack_image(ir))
+        
+        if self.TL_zip_var.get():
+            self.export_TL_zip(i, ir)
+            
         self.set_status("Talbot-Lau simulation finished!")
         #DPC, Phase, At, Transmission, DF = DPC_Retrieval(ib, ibr, G2Period, DSO, distance,0,mean_energy)
 
@@ -787,6 +811,171 @@ class PCSim_gui:
 
         materialL,_ = wg.create_label_file_combobox(paramsFrame,'Material', os.path.join(self.parent_path, 'Resources','complex_refractive_index'),5,0, self.TL_material)
         ApplyButton = wg.create_button(paramsFrame, 'Apply Changes', 9,0 ,padx = 20, pady= 10, command = self.apply_changes)
+        
+    def save_preset_TL(self):
+        params = {
+            "type": "TL_SIM",
+            "n": self.TL_n.get(),
+            "pixel_size": self.TL_pixel_size.get(),
+            "FWHM_source": self.TL_FWHM_source.get(),
+            "Beam_Shape": self.TL_BeamShape.get(),
+            "Beam_Spectrum": self.TL_Beam_Spectrum.get(),
+            "energy": self.TL_beam_energy.get(),
+            "DSO": self.TL_DSO.get(),
+            "DOG1": self.TL_DOG1.get(),
+            "Period_G1": self.TL_Period_G1.get(),
+            "G1_Phase": self.TL_G1_Phase.get(),
+            "steps": self.TL_steps.get(),
+            "step_length": self.TL_step_length.get(),
+            "Object": self.TL_Object.get(),
+            "radius": self.TL_radius.get(),
+            "material": self.TL_material.get()
+        }
+
+        filename = asksaveasfilename(defaultextension=".json")
+        if filename:
+            with open(filename, "w") as f:
+                json.dump(params, f, indent=4)
+            self.set_status("Preset saved successfully.")
+            
+    def save_preset_Inline(self):
+        params = {
+            "type": "Inline_SIM",
+            "n": self.i_n.get(),
+            "pixel_size": self.i_pixel_size.get(),
+            "FWHM_source": self.i_FWHM_source.get(),
+            "Beam_Shape": self.i_Beam_Shape.get(),
+            "Beam_Spectrum": self.i_Beam_Spectrum.get(),
+            "energy": self.i_beam_energy.get(),
+            "DSO": self.i_DSO.get(),
+            "DOD": self.i_DOD.get(),
+            "Period_G1": self.TL_Period_G1.get(),
+            "Object": self.i_Object.get(),
+            "radius": self.i_radius.get(),
+            "material": self.i_material.get(),
+            "image_option": self.i_image_option.get(),
+            "resolution": self.i_resolution.get(),
+            "inner_radius": self.i_inner_radius.get(),
+            "xshift": self.i_xshift.get(),
+            "yshift": self.i_yshift.get(),
+            "orientation": self.i_orientation.get(),
+            "FWHM_detector": self.i_FWHM_detector.get(),
+            "detector_pixel_size": self.i_detector_pixel_size.get()
+            
+        }
+        filename = asksaveasfilename(defaultextension=".json")
+        if filename:
+            with open(filename, "w") as f:
+                json.dump(params, f, indent=4)
+            self.set_status("Preset saved successfully.")
+            
+            
+    def load_preset_TL(self):
+        filename = askopenfilename(filetypes=[("JSON files", "*.json")])
+        if not filename:
+            return
+
+        with open(filename, "r") as f:
+            params = json.load(f)
+
+        p = params
+
+        self.TL_n.set(p["n"])
+        self.TL_pixel_size.set(p["pixel_size"])
+        self.TL_FWHM_source.set(p["FWHM_source"])
+        self.TL_BeamShape.set(p["Beam_Shape"])
+        self.TL_Beam_Spectrum.set(p["Beam_Spectrum"])
+        self.TL_beam_energy.set(p["energy"])
+        self.TL_DSO.set(p["DSO"])
+        self.TL_DOG1.set(p["DOG1"])
+        self.TL_Period_G1.set(p["Period_G1"])
+        self.TL_G1_Phase.set(p["G1_Phase"])
+        self.TL_steps.set(p["steps"])
+        self.TL_step_length.set(p["step_length"])
+        self.TL_Object.set(p["Object"])
+        self.TL_radius.set(p["radius"])
+        self.TL_material.set(p["material"])
+
+        self.set_status("Preset loaded successfully.")
+    
+    def load_preset_Inline(self):
+        filename = askopenfilename(filetypes=[("JSON files", "*.json")])
+        if not filename:
+            return
+
+        with open(filename, "r") as f:
+            params = json.load(f)
+
+        p = params
+
+        self.i_n.set(p["n"])
+        self.i_pixel_size.set(p["pixel_size"])
+        self.i_FWHM_source.set(p["FWHM_source"])
+        self.i_Beam_Shape.set(p["Beam_Shape"])
+        self.i_Beam_Spectrum.set(p["Beam_Spectrum"])
+        self.i_beam_energy.set(p["energy"])
+        self.i_DSO.set(p["DSO"])
+        self.i_DOD.set(p["DOD"])
+        self.i_Object.set(p["Object"])
+        self.i_radius.set(p["radius"])
+        self.i_material.set(p["material"])
+        self.i_image_option.set(p["image_option"])
+        self.i_resolution.set(p["resolution"])
+        self.i_inner_radius.set(p["inner_radius"])
+        self.i_xshift.set(p["xshift"])
+        self.i_yshift.set(p["yshift"])
+        self.i_orientation.set(p["orientation"])
+        self.i_FWHM_detector.set(p["FWHM_detector"])
+        self.i_detector_pixel_size.set(p["detector_pixel_size"])
+
+        self.set_status("Preset loaded successfully.")
+        
+    def get_inline_config(self):
+        return {
+            "n": self.i_n.get(),
+            "pixel_size": self.i_pixel_size.get(),
+            "DSO": self.i_DSO.get(),
+            "DOD": self.i_DOD.get(),
+            "FWHM_source": self.i_FWHM_source.get(),
+            "Beam_Shape": self.i_Beam_Shape.get(),
+            "Beam_Spectrum": self.i_Beam_Spectrum.get(),
+            "beam_energy": self.i_beam_energy.get(),
+            "Object": self.i_Object.get(),
+            "radius": self.i_radius.get(),
+            "inner_radius": self.i_inner_radius.get(),
+            "xshift": self.i_xshift.get(),
+            "yshift": self.i_yshift.get(),
+            "material": self.i_material.get(),
+            "image_option": self.i_image_option.get(),
+            "detector_pixel_size": self.i_detector_pixel_size.get(),
+            "FWHM_detector": self.i_FWHM_detector.get(),
+            "resolution": self.i_resolution.get(),
+        }
+        
+    def get_TL_config(self):
+        return {
+            "n": self.TL_n.get(),
+            "pixel_size": self.TL_pixel_size.get(),
+            "DSO": self.TL_DSO.get(),
+            "DOG1": self.TL_DOG1.get(),
+            "FWHM_source": self.TL_FWHM_source.get(),
+            "Beam_Shape": self.TL_BeamShape.get(),
+            "Beam_Spectrum": self.TL_Beam_Spectrum.get(),
+            "beam_energy": self.TL_beam_energy.get(),
+            "Period_G1": self.TL_Period_G1.get(),
+            "G1_Phase": self.TL_G1_Phase.get(),
+            "steps": self.TL_steps.get(),
+            "step_length": self.TL_step_length.get(),
+            "Object": self.TL_Object.get(),
+            "radius": self.TL_radius.get(),
+            "inner_radius": self.TL_inner_radius.get(),
+            "xshift": self.TL_xshift.get(),
+            "yshift": self.TL_yshift.get(),
+            "material": self.TL_material.get(),
+            "image_option": self.TL_image_option.get(),
+            "detector_pixel_size": self.TL_detector_pixel_size.get(),
+            "resolution": self.TL_resolution.get(),
+        }
 
     def save_image(self, data):
         files = [('All Files', '*.*'), 
@@ -818,4 +1007,77 @@ class PCSim_gui:
     def set_status(self, text):
         self.status_var.set(text)
         self.master.update_idletasks()
+        
+    def export_inline_zip(self, intensity_array):
+        """Export inline simulation config + result as a ZIP."""
+
+        zip_path = asksaveasfilename(
+            defaultextension=".zip",
+            filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")])
+        if not zip_path:
+            return
+
+        config = self.get_inline_config()
+        config_json = json.dumps(config, indent=2)
+
+        tiff_buffer = io.BytesIO()
+        tifffile.imwrite(tiff_buffer, intensity_array.astype(np.float32))
+        tiff_buffer.seek(0)
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        readme = (
+            "XPCIpy Inline Simulation\n"
+            f"Timestamp: {timestamp}\n\n"
+            "This ZIP contains:\n"
+            "- inline_config.json -> simulation parameters\n"
+            "- intensity.tif-> output intensity image\n"
+        )
+
+        with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("inline_config.json", config_json)
+            zf.writestr("README.txt", readme)
+            zf.writestr("intensity.tif", tiff_buffer.getvalue())
+            
+    def export_TL_zip(self, i_stack, ir_stack):
+        """Export Talbot-Lau simulation config + result as a ZIP."""
+
+        zip_path = asksaveasfilename(
+            defaultextension=".zip",
+            filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")])
+        if not zip_path:
+            return
+
+        config = self.get_TL_config()
+        config_json = json.dumps(config, indent=2)
+        
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        i_arr = np.asarray(i_stack)
+        ir_arr = np.asarray(ir_stack)
+
+        if i_arr.ndim == 2:
+            i_arr = i_arr[np.newaxis, ...]
+        if ir_arr.ndim == 2:
+            ir_arr = ir_arr[np.newaxis, ...]
+
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("TL_config.json", config_json)
+            
+            buf_obj = io.BytesIO()
+            tifffile.imwrite(buf_obj, i_arr.astype(np.float32), photometric="minisblack")
+            zf.writestr("object_stack.tif", buf_obj.getvalue())
+
+            buf_ref = io.BytesIO()
+            tifffile.imwrite(buf_ref, ir_arr.astype(np.float32), photometric="minisblack")
+            zf.writestr("reference_stack.tif", buf_ref.getvalue())
+
+            readme_text = (
+                "Talbot-Lau phase-contrast simulation results\n"
+                f"Timestamp: {timestamp}\n\n"
+                "Files:\n"
+                "  - TL_config.json: simulation parameters\n"
+                "  - object_stack.tif: phase-stepping stack with object\n"
+                "  - reference_stack.tif: phase-stepping stack without object\n"
+            )
+            zf.writestr("README.txt", readme_text)
         

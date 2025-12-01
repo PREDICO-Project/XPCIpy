@@ -1,0 +1,23 @@
+{
+    "type": "Inline_SIM",
+    "n": 500,
+    "pixel_size": 1.0,
+    "FWHM_source": 10.0,
+    "Beam_Shape": "Plane",
+    "Beam_Spectrum": "Monoenergetic",
+    "energy": 25.0,
+    "DSO": 20.0,
+    "DOD": 20.0,
+    "Period_G1": 6.0,
+    "Object": "Sphere",
+    "radius": 200.0,
+    "material": "H2O.txt",
+    "image_option": "Ideal",
+    "resolution": 20,
+    "inner_radius": 0.0,
+    "xshift": 0,
+    "yshift": 0,
+    "orientation": "Vertical",
+    "FWHM_detector": 10.0,
+    "detector_pixel_size": 10.0
+}
