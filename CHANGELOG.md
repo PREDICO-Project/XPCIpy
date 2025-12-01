@@ -83,6 +83,9 @@ Features:
   - Metadata (timestamp, system info)
 - This feature provides complete reproducibility and facilitates sharing or archiving simulation runs.
 
+### 3.8. Error handlind
+- Implemented a window with the error when it occurs.
+
 ---
 
 ## 4. Layout Fixes and Stability
@@ -106,7 +109,6 @@ These items were discussed but not approved (yet) for implementation:
 
 - History panel for reconstruction parameters  
 - GPU acceleration indicators
-- Detailed metadata export
 - Tooltips for each parameter
 - Hover-preview on images
 - Plugin-style extension system

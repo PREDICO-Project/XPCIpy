@@ -25,7 +25,8 @@ from GUI.widgets import ToggleButton
 import zipfile
 import datetime
 import io
-
+import traceback
+from tkinter import messagebox
 
 class PCSim_gui:
 
@@ -428,172 +429,183 @@ class PCSim_gui:
 
         
     def RunInline(self):
-        self.set_status("Running inline simulation...")
-        n = self.i_n.get()
-        DSO = self.i_DSO.get()
-        DOD = self.i_DOD.get()
-        pixel_size = self.i_pixel_size.get()
-        Beam_Shape = self.i_Beam_Shape.get()
-        FWHM_source = self.i_FWHM_source.get()
-        Beam_Spectrum = os.path.splitext(self.i_Beam_Spectrum.get())[0]
-        beam_energy = self.i_beam_energy.get()
-        Object = self.i_Object.get()
+        
+        def _run():
+            self.set_status("Running inline simulation...")
+            n = self.i_n.get()
+            DSO = self.i_DSO.get()
+            DOD = self.i_DOD.get()
+            pixel_size = self.i_pixel_size.get()
+            Beam_Shape = self.i_Beam_Shape.get()
+            FWHM_source = self.i_FWHM_source.get()
+            Beam_Spectrum = os.path.splitext(self.i_Beam_Spectrum.get())[0]
+            beam_energy = self.i_beam_energy.get()
+            Object = self.i_Object.get()
 
-        Material = os.path.splitext(self.i_material.get())[0]
-        image_option = self.i_image_option.get()
-        FWHM_detector = self.i_FWHM_detector.get()
-        detector_pixel_size = self.i_detector_pixel_size.get()
-        
-        #try:
-         #   resolution = self.i_resolution.get()
-        #except:
-         #   resolution = 1
-
-        if Object == 'Sphere':
-            radius = self.i_radius.get()
-            x_shift =  self.i_xshift.get() 
-            y_shift =  self.i_yshift.get()
-            MyObject1 = obj.Sphere(n, radius, pixel_size, Material, DSO, x_shift, y_shift)
-        
-        elif Object == 'Cylinder':
-            outer_radius = self.i_radius.get()
-            inner_radius = self.i_inner_radius.get()
-            x_shift =  self.i_xshift.get() 
-            y_shift =  self.i_yshift.get()
-            Orientation = self.i_orientation.get()
-            MyObject1 = obj.Cylinder(n, outer_radius, inner_radius, Orientation, pixel_size, Material, DSO, x_shift, y_shift)
-        
-        if Beam_Spectrum == 'Monoenergetic':
-            Beam_Spectrum = 'Mono'
-       
-        MySource = source.Source((FWHM_source, FWHM_source),Beam_Spectrum, beam_energy, Beam_Shape, pixel_size)
-        MyDetector = detector.Detector(image_option, detector_pixel_size, FWHM_detector, 'gaussian', pixel_size)
-        MyGeometry = geom.Geometry(DSO+DOD)
-
-        #PSF_source = MySource.Source_PSF((n,n), M)
-
-        Sample = [MyObject1]
-
-        Intensity = exp.Experiment_Inline(n, MyGeometry, MySource, MyDetector, Sample)
-        
-        
-        self.Plot_Figure(self.i_results_frame, Intensity,0,0, (3,3), 'Inline Simulation')
-        bt1 = wg.create_button(self.i_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensity))
-        
-        if self.i_zip_var.get():
-            self.export_inline_zip(Intensity)
+            Material = os.path.splitext(self.i_material.get())[0]
+            image_option = self.i_image_option.get()
+            FWHM_detector = self.i_FWHM_detector.get()
+            detector_pixel_size = self.i_detector_pixel_size.get()
             
-        self.set_status("Inline simulation finished!")
+            #try:
+            #   resolution = self.i_resolution.get()
+            #except:
+            #   resolution = 1
+
+            if Object == 'Sphere':
+                radius = self.i_radius.get()
+                x_shift =  self.i_xshift.get() 
+                y_shift =  self.i_yshift.get()
+                MyObject1 = obj.Sphere(n, radius, pixel_size, Material, DSO, x_shift, y_shift)
+            
+            elif Object == 'Cylinder':
+                outer_radius = self.i_radius.get()
+                inner_radius = self.i_inner_radius.get()
+                x_shift =  self.i_xshift.get() 
+                y_shift =  self.i_yshift.get()
+                Orientation = self.i_orientation.get()
+                MyObject1 = obj.Cylinder(n, outer_radius, inner_radius, Orientation, pixel_size, Material, DSO, x_shift, y_shift)
+            
+            if Beam_Spectrum == 'Monoenergetic':
+                Beam_Spectrum = 'Mono'
+        
+            MySource = source.Source((FWHM_source, FWHM_source),Beam_Spectrum, beam_energy, Beam_Shape, pixel_size)
+            MyDetector = detector.Detector(image_option, detector_pixel_size, FWHM_detector, 'gaussian', pixel_size)
+            MyGeometry = geom.Geometry(DSO+DOD)
+
+            #PSF_source = MySource.Source_PSF((n,n), M)
+
+            Sample = [MyObject1]
+
+            Intensity = exp.Experiment_Inline(n, MyGeometry, MySource, MyDetector, Sample)
+            
+            self.clear_frame(self.i_results_frame)
+            self.Plot_Figure(self.i_results_frame, Intensity,0,0, (3,3), 'Inline Simulation')
+            bt1 = wg.create_button(self.i_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensity))
+            
+            if self.i_zip_var.get():
+                self.export_inline_zip(Intensity)
+                
+            self.set_status("Inline simulation finished!")
+
+        self.run_with_error_handling(_run, "Running Inline simulation...")
+        
     def RunCheckTL(self):
-        self.set_status("Running Talbot carpet simulation...")
-        n = self.c_n.get()
-        pixel_size = self.c_pixel_size.get() #um
-        FWHM_source = self.c_FWHM_source.get()
-        Energy = self.c_energy.get() #keV
-        Period = self.c_period.get() # um
-        DC = self.c_DC.get()
-        Material = self.c_material.get()
-        bar_height = self.c_bar_height.get()
-        multiples = self.c_multiple.get()#Multiples of Talbot Distance defined as Dt = 2*p**2/wavelength
-        iterations = self.c_iterations.get()
-        grating_option = self.c_grating_def.get()
-        wavelength = 1.23984193/(1000*Energy) # in um
+        def _run():
+            #self.set_status("Running Talbot carpet simulation...")
+            n = self.c_n.get()
+            pixel_size = self.c_pixel_size.get() #um
+            FWHM_source = self.c_FWHM_source.get()
+            Energy = self.c_energy.get() #keV
+            Period = self.c_period.get() # um
+            DC = self.c_DC.get()
+            Material = self.c_material.get()
+            bar_height = self.c_bar_height.get()
+            multiples = self.c_multiple.get()#Multiples of Talbot Distance defined as Dt = 2*p**2/wavelength
+            iterations = self.c_iterations.get()
+            grating_option = self.c_grating_def.get()
+            wavelength = 1.23984193/(1000*Energy) # in um
 
-        MySource = source.Source((FWHM_source, FWHM_source),'Mono', Energy, 'Plane', pixel_size)
-        
-        if grating_option == 'Custom':
-            grating_type = 'custom'
-            title = 'Custom Grating'
-        elif grating_option == 'Phase pi':
-            grating_type = 'phase_pi'
-            bar_height = None
-            Material = None
-            title = 'pi-phase Grating'
-        elif grating_option == 'Phase pi/2':
-            grating_type = 'phase_pi_2'
-            bar_height = None
-            Material = None
-            title = 'pi/2-phase Grating'
+            MySource = source.Source((FWHM_source, FWHM_source),'Mono', Energy, 'Plane', pixel_size)
+            
+            if grating_option == 'Custom':
+                grating_type = 'custom'
+                title = 'Custom Grating'
+            elif grating_option == 'Phase pi':
+                grating_type = 'phase_pi'
+                bar_height = None
+                Material = None
+                title = 'pi-phase Grating'
+            elif grating_option == 'Phase pi/2':
+                grating_type = 'phase_pi_2'
+                bar_height = None
+                Material = None
+                title = 'pi/2-phase Grating'
 
-        Intensities= check_Talbot.Talbot_carpet(n, MySource, Period, DC, multiples, iterations, grating_type,pixel_size, Energy, material=Material, grating_height= bar_height)
+            Intensities= check_Talbot.Talbot_carpet(n, MySource, Period, DC, multiples, iterations, grating_type,pixel_size, Energy, material=Material, grating_height= bar_height)
+            
+            self.clear_frame(self.c_results_frame)
+            self.Plot_check_TL(self.c_results_frame, Intensities, 0, 0, (3,3), title, multiples, n)
+            bt1 = wg.create_button(self.c_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensities))
         
-        self.Plot_check_TL(self.c_results_frame, Intensities, 0, 0, (3,3), title, multiples, n)
-        bt1 = wg.create_button(self.c_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensities))
+        self.run_with_error_handling(_run, "Running Talbot carpet simulation...")
         self.set_status("Talbot carpet simulation finished!")
-    
 
     def RunTL(self):
-        self.set_status("Running Talbot-Lau simulation...")
-        n = self.TL_n.get()
-        pixel_size = self.TL_pixel_size.get()
-        FWHM_source = self.TL_FWHM_source.get()
-        Beam_Shape = self.TL_BeamShape.get()
-        Beam_Spectrum = os.path.splitext(self.TL_Beam_Spectrum.get())[0]
-        design_energy = self.TL_beam_energy.get()
+        def _run():
+            #self.set_status("Running Talbot-Lau simulation...")
+            n = self.TL_n.get()
+            pixel_size = self.TL_pixel_size.get()
+            FWHM_source = self.TL_FWHM_source.get()
+            Beam_Shape = self.TL_BeamShape.get()
+            Beam_Spectrum = os.path.splitext(self.TL_Beam_Spectrum.get())[0]
+            design_energy = self.TL_beam_energy.get()
 
-        DSG1 = self.TL_DSO.get()
-        DOG1 = self.TL_DOG1.get()
-        object = self.TL_Object.get()
-        radius = self.TL_radius.get()
-        inner_radius = self.TL_inner_radius.get()
-        material= os.path.splitext(self.TL_material.get())[0]
-        Period_G1 = self.TL_Period_G1.get()
-        G1_Phase = self.TL_G1_Phase.get()
-        FWHM_detector = self.TL_resolution.get()
-        detector_pixel_size = self.TL_detector_pixel_size.get()
-        xshift = self.TL_xshift.get()
-        yshift = self.TL_yshift.get()
-        image_option = self.TL_image_option.get()
-        angle = 0
-
-
-        Objects=[]
-        if Beam_Spectrum == 'Monoenergetic':
-            Beam_Spectrum = 'Mono'
-        if G1_Phase == 'Phase pi/2':
-            G1_type = 'phase_pi_2'
-        elif G1_Phase == 'Phase pi':
-            G1_type = 'phase_pi'
-
-        MySource = source.Source((FWHM_source, FWHM_source),Beam_Spectrum, design_energy, Beam_Shape, pixel_size)
-        mean_energy = MySource.mean_energy
-        mean_wavelength = 1.23984193/(mean_energy*1000)
-        MyDetector = detector.Detector(image_option, detector_pixel_size, FWHM_detector, 'gaussian', pixel_size)
-
-        configuration = TL_CONFIG(Design_energy = design_energy, G1_Period = Period_G1, DSG1=DSG1, Movable_Grating = self.TL_MovableGrating.get(),
-                                G1_type = G1_type, TL_multiple = self.TL_TLmultiple.get(), 
-                                Number_steps = self.TL_steps.get(), Step_length = self.TL_step_length.get(), pixel_size = pixel_size, angle = 0, resolution = FWHM_detector, 
-                                pixel_detector = detector_pixel_size)
+            DSG1 = self.TL_DSO.get()
+            DOG1 = self.TL_DOG1.get()
+            object = self.TL_Object.get()
+            radius = self.TL_radius.get()
+            inner_radius = self.TL_inner_radius.get()
+            material= os.path.splitext(self.TL_material.get())[0]
+            Period_G1 = self.TL_Period_G1.get()
+            G1_Phase = self.TL_G1_Phase.get()
+            FWHM_detector = self.TL_resolution.get()
+            detector_pixel_size = self.TL_detector_pixel_size.get()
+            xshift = self.TL_xshift.get()
+            yshift = self.TL_yshift.get()
+            image_option = self.TL_image_option.get()
+            angle = 0
 
 
-        if object == 'Sphere':
-            object1 = obj.Sphere(n, radius, pixel_size, material, DSG1-DOG1, xshift,yshift)
-        
-        elif object == 'Cylinder':
-            orientation = self.TL_orientation.get()
-            object1 = obj.Cylinder(n, radius, inner_radius,orientation,pixel_size, material, DSO = DSG1-DOG1, x_shift_px=xshift, y_shift_px=yshift)
+            Objects=[]
+            if Beam_Spectrum == 'Monoenergetic':
+                Beam_Spectrum = 'Mono'
+            if G1_Phase == 'Phase pi/2':
+                G1_type = 'phase_pi_2'
+            elif G1_Phase == 'Phase pi':
+                G1_type = 'phase_pi'
+
+            MySource = source.Source((FWHM_source, FWHM_source),Beam_Spectrum, design_energy, Beam_Shape, pixel_size)
+            mean_energy = MySource.mean_energy
+            mean_wavelength = 1.23984193/(mean_energy*1000)
+            MyDetector = detector.Detector(image_option, detector_pixel_size, FWHM_detector, 'gaussian', pixel_size)
+
+            configuration = TL_CONFIG(Design_energy = design_energy, G1_Period = Period_G1, DSG1=DSG1, Movable_Grating = self.TL_MovableGrating.get(),
+                                    G1_type = G1_type, TL_multiple = self.TL_TLmultiple.get(), 
+                                    Number_steps = self.TL_steps.get(), Step_length = self.TL_step_length.get(), pixel_size = pixel_size, angle = 0, resolution = FWHM_detector, 
+                                    pixel_detector = detector_pixel_size)
+
+
+            if object == 'Sphere':
+                object1 = obj.Sphere(n, radius, pixel_size, material, DSG1-DOG1, xshift,yshift)
             
-        Objects=[object1]
-        
-        pixel_size = configuration.pixel_size
-        geometry = geom.Geometry()  
-        distance, G2Period = geometry.calculate_Talbot_distance_and_G2period(MySource, configuration)
-        geometry.DSD  = DSG1+distance
-        configuration.G2_Period = G2Period
-
-        G1 = obj.Grating(n , Period_G1, 0.5, pixel_size, 'Si', DSG1, grating_type = G1_type, design_energy = design_energy)
-        G2 = obj.Grating(n , G2Period, 0.5, pixel_size, 'Au', DSG1+distance, 40,grating_type = 'custom', design_energy = design_energy)
-
-        i, ir = exp.Experiment_Phase_Stepping(n, MyDetector, MySource, geometry, Objects, G1, G2, configuration, padding = 0)
-    
-        self.Plot_Modulation_Curve(self.TL_results_frame, i, ir, 0, 0, (3,3), 'Phase Stepping Curve', columnspan=2)
-        self.Plot_Figure(self.TL_results_frame, i[0,:,:], 1, 0, (3,3), 'One Projection', columnspan=2)
-        bt1 = wg.create_button(self.TL_results_frame, 'Save Stack Object Images', 2,0, command=  lambda : self.save_stack_image(i))
-        bt2 = wg.create_button(self.TL_results_frame, 'Save Stack Reference Images', 2,1, command=  lambda : self.save_stack_image(ir))
-        
-        if self.TL_zip_var.get():
-            self.export_TL_zip(i, ir)
+            elif object == 'Cylinder':
+                orientation = self.TL_orientation.get()
+                object1 = obj.Cylinder(n, radius, inner_radius,orientation,pixel_size, material, DSO = DSG1-DOG1, x_shift_px=xshift, y_shift_px=yshift)
+                
+            Objects=[object1]
             
+            pixel_size = configuration.pixel_size
+            geometry = geom.Geometry()  
+            distance, G2Period = geometry.calculate_Talbot_distance_and_G2period(MySource, configuration)
+            geometry.DSD  = DSG1+distance
+            configuration.G2_Period = G2Period
+
+            G1 = obj.Grating(n , Period_G1, 0.5, pixel_size, 'Si', DSG1, grating_type = G1_type, design_energy = design_energy)
+            G2 = obj.Grating(n , G2Period, 0.5, pixel_size, 'Au', DSG1+distance, 40,grating_type = 'custom', design_energy = design_energy)
+
+            i, ir = exp.Experiment_Phase_Stepping(n, MyDetector, MySource, geometry, Objects, G1, G2, configuration, padding = 0)
+            
+            self.clear_frame(self.TL_results_frame)
+            self.Plot_Modulation_Curve(self.TL_results_frame, i, ir, 0, 0, (3,3), 'Phase Stepping Curve', columnspan=2)
+            self.Plot_Figure(self.TL_results_frame, i[0,:,:], 1, 0, (3,3), 'One Projection', columnspan=2)
+            bt1 = wg.create_button(self.TL_results_frame, 'Save Stack Object Images', 2,0, command=  lambda : self.save_stack_image(i))
+            bt2 = wg.create_button(self.TL_results_frame, 'Save Stack Reference Images', 2,1, command=  lambda : self.save_stack_image(ir))
+            
+            if self.TL_zip_var.get():
+                self.export_TL_zip(i, ir)
+        
+        self.run_with_error_handling(_run, "Running Talbot-Lau simulation...")
         self.set_status("Talbot-Lau simulation finished!")
         #DPC, Phase, At, Transmission, DF = DPC_Retrieval(ib, ibr, G2Period, DSO, distance,0,mean_energy)
 
@@ -1080,4 +1092,17 @@ class PCSim_gui:
                 "  - reference_stack.tif: phase-stepping stack without object\n"
             )
             zf.writestr("README.txt", readme_text)
-        
+
+    def run_with_error_handling(self, func, status_text):
+        try:
+            self.set_status(status_text)
+            func()
+            self.set_status(status_text.replace("...", " finished!"))
+        except Exception as e:
+            self.set_status("Error.")
+            traceback.print_exc()
+            messagebox.showerror("Error", f"An error occurred:\n{e}")
+            
+    def clear_frame(self, frame):
+        for widget in frame.winfo_children():
+            widget.destroy()
