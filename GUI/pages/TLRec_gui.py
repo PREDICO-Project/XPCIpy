@@ -1,7 +1,7 @@
 import tkinter as tk
-from GUI.styles import Styles as stl
-from GUI.widgets import Widget as wg
-from tkinter import ttk, filedialog
+from GUI.ui.styles import Styles as stl
+from GUI.ui.widgets import Widget as wg
+from tkinter import ttk, filedialog, messagebox
 from tkinter.filedialog import asksaveasfilename
 import os
 #from skimage import io
@@ -15,8 +15,11 @@ from src.TLRec.utils import Apply_Phase_Wiener_filter
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg)
 from matplotlib.figure import Figure
 import json
+from GUI.utils import resource_path
 #from GUI.config.default_conf import default_TLRec_conf
 import time
+import threading
+
 
 
 class ImageControlPanel:
@@ -102,6 +105,10 @@ class TLRec_GUI:
         self.master = master
         self.status_var = status_var
         
+        # --- LOADING OVERLAY ---
+        self.overlay = None
+        self.overlay_label = None
+        
         stl.configure_style()
         
         self.generate_load_files_frame()
@@ -124,8 +131,9 @@ class TLRec_GUI:
         self.n = tk.IntVar()
         self.s = tk.DoubleVar()
         
-        config_path  = os.path.join(os.path.dirname(__file__), "config")
-        with open(os.path.join(config_path, 'config_TLRec.json')) as json_path:
+        #config_path  = os.path.join(os.path.dirname(__file__), "config") # OLD
+        config_path = resource_path(os.path.join("GUI/config/config_TLRec.json"))
+        with open(config_path) as json_path:
             #default_TLRec_conf = json.load(os.path.join(config_path, 'config_inline.json'))
 
             default_TLRec_conf = json.load(json_path)
@@ -270,8 +278,9 @@ class TLRec_GUI:
         wg.create_button(paramsFrame, 'Save/Modify',10,0, command =self.apply_changes_json )
 
     def apply_changes_json(self):
-        config_path  = os.path.join(os.path.dirname(__file__), "config")
-        with open(os.path.join(config_path, 'config_TLRec.json'), 'r') as json_path:
+        #config_path  = os.path.join(os.path.dirname(__file__), "config") # OLD
+        config_path = resource_path(os.path.join("GUI/config/config_TLRec.json"))
+        with open(config_path, 'r') as json_path:
             default_TLRec_conf = json.load(json_path)
             default_TLRec_conf["G1Period"] = self.G1Period_default.get()
             default_TLRec_conf['G2Period'] = self.G2Period_default.get() #micrometer
@@ -284,7 +293,7 @@ class TLRec_GUI:
             default_TLRec_conf['m'] = self.n.get()
             default_TLRec_conf['s'] = self.s.get()
 
-        with open(os.path.join(config_path, 'config_TLRec.json'), "w") as jsonFile:
+        with open(config_path, "w") as jsonFile:
             json.dump(default_TLRec_conf, jsonFile)
         
         params_window.destroy()
@@ -564,98 +573,246 @@ class TLRec_GUI:
         # Disabled button during reconstruction
         self.RetrieveButton.config(state="disabled")
         self.master.update_idletasks()
+        self.set_ui_busy(True)
+        self.show_overlay("Reconstructing...")
         
+        def worker():
+            try:
+                start_time = time.perf_counter()
+                Diff_Phase, transmission, Dark_Field, Phase, _, _ = Modulation_Curve_Reconstruction(self.images, self.images_reference,
+                self.G2Period_default.get(),self.DSG1_Default.get(), self.DG1G2_Default.get(), self.DOG1_Default.get(), self.Energy_Default.get(), self.pixel_size.get(),type=rec_type, unwrap_phase=False)
+                end_time = time.perf_counter()
+                elapsed_time = end_time - start_time
+                print("time: {} s".format(elapsed_time))
+                
+                self.last_Phase = Phase
+                self.last_diff = Diff_Phase
+                
+                Phase = Apply_Phase_Wiener_filter(Diff_Phase, self.pixel_size.get(), self.pixel_size.get(), self.v0.get(), self.n.get(), self.s.get())
+                
+                def update_ui():
+                    
+                    self.Plot_Figure(self.CanvasPlot, Diff_Phase, 0, 0, (3,3), 'Phase Gradient', store_attr="im_dpc")
+                    self.Plot_Figure(self.CanvasPlot, Phase, 0, 1, (3,3), 'Integrated Phase', store_attr="im_phase")
+                    self.create_phase_wiener_panel()
+                    self.Plot_Figure(self.CanvasPlot, transmission, 2, 0, (3,3), 'Transmission', store_attr="im_tr")
+                    self.Plot_Figure(self.CanvasPlot, Dark_Field, 2, 1, (3,3), 'Dark Field', store_attr="im_df")
+                
+                    bt1 = wg.create_button(self.CanvasPlot, 'Save Image', 1,0, command=  lambda : self.save_image(Diff_Phase))
+                    bt2 = wg.create_button(self.CanvasPlot, 'Save Image', 1,1, command=  lambda : self.save_image(Phase))
+                    bt3 = wg.create_button(self.CanvasPlot, 'Save Image', 3,0, command=  lambda : self.save_image(transmission))
+                    bt4 = wg.create_button(self.CanvasPlot, 'Save Image', 3,1, command=  lambda : self.save_image(Dark_Field))
+                
+            
+                    if hasattr(self, "wl_master_frame"):
+                        self.wl_master_frame.destroy()
+
+                    self.wl_master_frame = ttk.Frame(self.CanvasPlot)
+                    self.wl_master_frame.grid(row=4, column=0, columnspan=3, sticky="ew", pady=10)
+                    
+                    self.image_controls = {}
+
+                    self.image_controls["dpc"] = ImageControlPanel(
+                        parent_frame=self.wl_master_frame,
+                        title="Phase Gradient",
+                        image_array=Diff_Phase,
+                        im_handle=self.im_dpc,
+                        row=0)
+
+                    self.image_controls["phase"] = ImageControlPanel(
+                        parent_frame=self.wl_master_frame,
+                        title="Integrated Phase",
+                        image_array=Phase,
+                        im_handle=self.im_phase,
+                        row=1)
+
+                    self.image_controls["tr"] = ImageControlPanel(
+                        parent_frame=self.wl_master_frame,
+                        title="Transmission",
+                        image_array=transmission,
+                        im_handle=self.im_tr,
+                        row=2)
+
+                    self.image_controls["df"] = ImageControlPanel(
+                        parent_frame=self.wl_master_frame,
+                        title="Dark Field",
+                        image_array=Dark_Field,
+                        im_handle=self.im_df,
+                        row=3)
+                    
+                    self.pc_image_meta = {
+                        "phasegrad": {
+                            "label": "Phase Gradient",
+                            "im": self.im_dpc,
+                            "data": Diff_Phase,
+                        },
+                        "phase": {
+                            "label": "Integrated Phase",
+                            "im": self.im_phase,
+                            "data": Phase,
+                        },
+                        "trans": {
+                            "label": "Transmission",
+                            "im": self.im_tr,
+                            "data": transmission,
+                        },
+                        "df": {
+                            "label": "Dark Field",
+                            "im": self.im_df,
+                            "data": Dark_Field,
+                        },
+                    }
+                    
+                    for meta in self.pc_image_meta.values():
+                        canvas = meta["im"].figure.canvas
+                        canvas.mpl_connect("motion_notify_event", self.on_pc_image_motion)
+
+                    self.set_status(f"Reconstruction finished in {elapsed_time:.2f} s.")
+
+                self.master.after(0, update_ui)
+            except Exception as e:
+                def show_err():
+                    messagebox.showerror(
+                        "Error",
+                        f"An error occurred during reconstruction:\n{e}"
+                    )
+                    self.set_status("Error during reconstruction.")
+                self.master.after(0, show_err)
+
+            finally:
+                
+                def cleanup():
+                    self.set_ui_busy(False)
+                    self.hide_overlay()
+                self.master.after(0, cleanup)
+
+            
+        threading.Thread(target=worker, daemon=True).start()
+        
+    def set_ui_busy(self, busy: bool):
+        """
+        busy = True  -> disable
+        busy = False -> normal
+        """
+        state = "disabled" if busy else "normal"
+        
+        INTERACTIVE_TYPES = (
+            tk.Button, ttk.Button,
+            tk.Entry, ttk.Entry,
+            ttk.Combobox,
+            tk.Checkbutton, ttk.Checkbutton,
+            tk.Radiobutton, ttk.Radiobutton,
+            tk.Spinbox, ttk.Spinbox,
+        )
+
+        def recurse(widget):
+            for child in widget.winfo_children():
+                if isinstance(child, INTERACTIVE_TYPES):
+                    try:
+                        child.configure(state=state)
+                    except tk.TclError:
+                        pass
+                recurse(child)
+
+        recurse(self.master)
+
         try:
-            start_time = time.perf_counter()
-            Diff_Phase, transmission, Dark_Field, Phase, _, _ = Modulation_Curve_Reconstruction(self.images, self.images_reference,
-            self.G2Period_default.get(),self.DSG1_Default.get(), self.DG1G2_Default.get(), self.DOG1_Default.get(), self.Energy_Default.get(), self.pixel_size.get(),type=rec_type, unwrap_phase=False)
-            end_time = time.perf_counter()
-            elapsed_time = end_time - start_time
-            print("time: {} s".format(elapsed_time))
-            
-            self.last_Phase = Phase
-            self.last_diff = Diff_Phase
-            
-            Phase = Apply_Phase_Wiener_filter(Diff_Phase, self.pixel_size.get(), self.pixel_size.get(), self.v0.get(), self.n.get(), self.s.get())
-            
-            self.Plot_Figure(self.CanvasPlot, Diff_Phase, 0, 0, (3,3), 'Phase Gradient', store_attr="im_dpc")
-            self.Plot_Figure(self.CanvasPlot, Phase, 0, 1, (3,3), 'Integrated Phase', store_attr="im_phase")
-            self.create_phase_wiener_panel()
-            self.Plot_Figure(self.CanvasPlot, transmission, 2, 0, (3,3), 'Transmission', store_attr="im_tr")
-            self.Plot_Figure(self.CanvasPlot, Dark_Field, 2, 1, (3,3), 'Dark Field', store_attr="im_df")
+            self.master.configure(cursor="watch" if busy else "")
+        except tk.TclError:
+            pass
         
-            bt1 = wg.create_button(self.CanvasPlot, 'Save Image', 1,0, command=  lambda : self.save_image(Diff_Phase))
-            bt2 = wg.create_button(self.CanvasPlot, 'Save Image', 1,1, command=  lambda : self.save_image(Phase))
-            bt3 = wg.create_button(self.CanvasPlot, 'Save Image', 3,0, command=  lambda : self.save_image(transmission))
-            bt4 = wg.create_button(self.CanvasPlot, 'Save Image', 3,1, command=  lambda : self.save_image(Dark_Field))
-            
-        finally:
-            self.RetrieveButton.config(state="normal")
-            self.set_status(f"Reconstruction finished in {elapsed_time:.2f} s.")
-            
-        if hasattr(self, "wl_master_frame"):
-            self.wl_master_frame.destroy()
-
-        self.wl_master_frame = ttk.Frame(self.CanvasPlot)
-        self.wl_master_frame.grid(row=4, column=0, columnspan=3, sticky="ew", pady=10)
+    def set_ui_busy_threadsafe(self, busy: bool):
+        self.master.after(0, lambda: self.set_ui_busy(busy))
         
-        self.image_controls = {}
+    #Transparent Loading Screen
+    
+    def _sync_overlay_to_master(self, event=None):
+        if self.overlay is None:
+            return
 
-        self.image_controls["dpc"] = ImageControlPanel(
-            parent_frame=self.wl_master_frame,
-            title="Phase Gradient",
-            image_array=Diff_Phase,
-            im_handle=self.im_dpc,
-            row=0)
+        try:
+            self.overlay.deiconify()
+            self.overlay.lift(self.master)
+        except tk.TclError:
+            return
 
-        self.image_controls["phase"] = ImageControlPanel(
-            parent_frame=self.wl_master_frame,
-            title="Integrated Phase",
-            image_array=Phase,
-            im_handle=self.im_phase,
-            row=1)
+        self.master.update_idletasks()
+        w = self.master.winfo_width()
+        h = self.master.winfo_height()
+        if w <= 1 or h <= 1:
+            return
 
-        self.image_controls["tr"] = ImageControlPanel(
-            parent_frame=self.wl_master_frame,
-            title="Transmission",
-            image_array=transmission,
-            im_handle=self.im_tr,
-            row=2)
+        x = self.master.winfo_rootx()
+        y = self.master.winfo_rooty()
+        self.overlay.geometry(f"{w}x{h}+{x}+{y}")
+    
+    def show_overlay(self, message="Reconstructing..."):
 
-        self.image_controls["df"] = ImageControlPanel(
-            parent_frame=self.wl_master_frame,
-            title="Dark Field",
-            image_array=Dark_Field,
-            im_handle=self.im_df,
-            row=3)
+        if self.overlay is not None and self.overlay.winfo_exists():
+            try:
+                self.overlay.lift(self.master)
+            except tk.TclError:
+                pass
+            return
+
+        self.master.update_idletasks()
+        x = self.master.winfo_rootx()
+        y = self.master.winfo_rooty()
+        w = self.master.winfo_width()
+        h = self.master.winfo_height()
+
+        overlay = tk.Toplevel(self.master)
+        overlay.overrideredirect(True)
+        overlay.attributes("-alpha", 0.75)
+        overlay.configure(background="#000000")
+        overlay.geometry(f"{w}x{h}+{x}+{y}")
+        overlay.lift(self.master)
+        overlay.transient(self.master)
+
+        frame = tk.Frame(overlay, bg="#000000")
+        frame.pack(expand=True, fill="both")
+
+        label = tk.Label(
+            frame,
+            text=message,
+            fg="white",
+            bg="#000000",
+            font=("Segoe UI", 16, "bold")
+        )
+        label.pack(pady=10)
+
+        pb_var = tk.DoubleVar(value=0.0)
+        pb = ttk.Progressbar(
+            frame,
+            variable=pb_var,
+            maximum=100,
+            mode="determinate",
+            length=250
+        )
+        pb.pack(pady=10)
+
+        self.overlay = overlay
+        self.overlay_label = label
+
+        overlay.update_idletasks()
         
-        self.pc_image_meta = {
-            "phasegrad": {
-                "label": "Phase Gradient",
-                "im": self.im_dpc,
-                "data": Diff_Phase,
-            },
-            "phase": {
-                "label": "Integrated Phase",
-                "im": self.im_phase,
-                "data": Phase,
-            },
-            "trans": {
-                "label": "Transmission",
-                "im": self.im_tr,
-                "data": transmission,
-            },
-            "df": {
-                "label": "Dark Field",
-                "im": self.im_df,
-                "data": Dark_Field,
-            },
-        }
-        
-        for meta in self.pc_image_meta.values():
-            canvas = meta["im"].figure.canvas
-            canvas.mpl_connect("motion_notify_event", self.on_pc_image_motion)
+    def show_threadsafe(self, message="Reconstructing..."):
+        self.master.after(0, lambda: self.show_loading_overlay(message))
 
+
+    def hide_overlay(self):
+        if self.overlay is not None:
+            try:
+                self.overlay.destroy()
+            except tk.TclError:
+                pass
+
+        self.overlay = None
+        self.overlay_label = None
+
+        
+    def hide_overlay_threadsafe(self):
+        self.master.after(0, self.hide_loading_overlay)
             
 if __name__ == "__main__":
     TLRec_GUI()

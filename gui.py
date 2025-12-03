@@ -3,14 +3,18 @@ Script to run the Graphical User Interface (GUI)
 '''
 
 import tkinter as tk
-from GUI.PCSim_gui import PCSim_gui
-from GUI.styles import Styles as stl
+from GUI.pages.PCSim_gui import PCSim_gui
+from GUI.ui.styles import Styles as stl
+from GUI.utils import resource_path
+import sys
 
 def create_main_menu():
 
     root = tk.Tk()
-    root.title("Talbot Lau Environment")
-    
+    root.title("XPCIpy Environment")
+
+    logo_ico = resource_path("GUI/assets/logo.ico")
+    root.iconbitmap(logo_ico)
     # Style
     stl.configure_style()
     
@@ -21,12 +25,17 @@ def create_main_menu():
 
     PCSim_gui(root)
     
+    def on_close():
+        root.quit()
+        root.destroy()
+        sys.exit(0)
+        
     root.update_idletasks()
     w = root.winfo_width()
     h = root.winfo_height()
     root.minsize(w, h) 
 
-    root.protocol("WM_DELETE_WINDOW", root.destroy)
+    root.protocol("WM_DELETE_WINDOW", on_close)
 
     try:
         root.state('zoomed') # works on Windows

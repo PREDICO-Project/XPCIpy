@@ -1,12 +1,13 @@
 import tkinter as tk
-from GUI.styles import Styles as stl
-from GUI.widgets import Widget as wg
+from GUI.ui.styles import Styles as stl
+from GUI.ui.widgets import Widget as wg
 from tkinter import ttk
 from tkinter.filedialog import asksaveasfilename, askopenfilename
 import os
 import tifffile
 from PIL import Image
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
+from matplotlib import rcParams
 import numpy as np
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg)
 from matplotlib.figure import Figure
@@ -18,23 +19,27 @@ import src.PCSim.source as source
 from src.PCSim.TL_conf import TL_CONFIG
 import src.PCSim.detector as detector
 import src.PCSim.check_Talbot as check_Talbot
-from GUI.TLRec_gui import TLRec_GUI
+from GUI.pages.TLRec_gui import TLRec_GUI
 from GUI.text import check_TL_text
-from GUI.widgets import VerticalScrolledFrame as vsf
-from GUI.widgets import ToggleButton
+from GUI.ui.widgets import VerticalScrolledFrame as vsf
+from GUI.ui.widgets import ToggleButton
 import zipfile
 import datetime
 import io
 import traceback
 from tkinter import messagebox
+import sys
+from GUI.utils import resource_path
+import threading
 
 class PCSim_gui:
 
     def __init__(self, master):
 
-        self.parent_path = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-        self.granpa_path = os.path.abspath(os.path.join(self.parent_path, os.pardir))
-        self.granpa2_path = os.path.abspath(os.path.join(self.granpa_path, os.pardir))
+        # OLD
+        #self.parent_path = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+        #self.granpa_path = os.path.abspath(os.path.join(self.parent_path, os.pardir))
+        #self.granpa2_path = os.path.abspath(os.path.join(self.granpa_path, os.pardir))
         #self.root_path = os.path.abspath(os.path.join(self.granpa2_path, os.pardir)) # Not used really
 
         self.master = master
@@ -54,6 +59,22 @@ class PCSim_gui:
             anchor="w"
         )
         status_bar.grid(row=1, column=0, sticky="ew")
+        
+        self.progress_var = tk.DoubleVar(value=0.0)
+        self.progress_bar = ttk.Progressbar(
+            self.master,
+            variable=self.progress_var,
+            maximum=100,
+            mode="determinate"
+        )
+        self.master.grid_rowconfigure(2, weight=0)
+        self.progress_bar.grid(row=2, column=0, sticky="ew")
+        
+        # --- LOADING OVERLAY ---
+        self.overlay = None
+        self.overlay_label = None
+        self.overlay_progress = None
+        self.overlay_progress_var = None
 
         # --- NOTEBOOK ---
         self.tab_container = ttk.Notebook(self.master)
@@ -61,7 +82,8 @@ class PCSim_gui:
         self.tab_container.grid(row=0, column=0, sticky="nsew")
 
         global Beam_Shape_OPTIONS, Beam_Spectrum_OPTIONS, Object_OPTIONS, Image_OPTIONS
-        spectra_path = os.path.join(self.parent_path, 'Resources', 'Spectra')
+        #spectra_path = os.path.join(self.parent_path, 'Resources', 'Spectra') # OLD
+        spectra_path = resource_path("Resources/Spectra")
         Beam_Spectrum_OPTIONS = sorted([f for f in os.listdir(spectra_path)
                                         if os.path.isfile(os.path.join(spectra_path, f))])
         Beam_Spectrum_OPTIONS.append("Monoenergetic")
@@ -72,7 +94,11 @@ class PCSim_gui:
         self.initialize_vars()
         self.create_tabs()
         
-
+    def close_app(self):
+        self.master.quit()
+        self.master.destroy()
+        sys.exit(0)
+        
     def create_tabs(self):
         # Create a Frame for each tab
         self.TLRec_tab = ttk.Frame(self.tab_container, style="TFrame")
@@ -152,7 +178,7 @@ class PCSim_gui:
         wg.create_button(parameters_frame, "Save preset", 15, 0, command=self.save_preset_Inline)
         wg.create_button(parameters_frame, "Load preset", 15, 1, command=self.load_preset_Inline)
 
-        ExitButton = wg.create_button(parameters_frame, "Exit", 16, 0, padx = 60, command=self.master.quit)
+        ExitButton = wg.create_button(parameters_frame, "Exit", 16, 0, padx = 60, command=self.close_app)
 
     def populate_checkTL_tab(self):
         
@@ -191,7 +217,7 @@ class PCSim_gui:
         #self.ResolutionL,_ = wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 9, 0,textvariable=self.c_resolution,padx = 20)
         self.RunButton = wg.create_button(parameters_frame, 'Run', 12,0,command = self.RunCheckTL)
 
-        ExitButton = wg.create_button(parameters_frame, "Exit", 13, 0, padx = 60, command=self.master.quit)
+        ExitButton = wg.create_button(parameters_frame, "Exit", 13, 0, padx = 60, command=self.close_app)
         font = {'family': 'serif',
         'color':  'lightgray',
         'weight': 'normal',
@@ -260,11 +286,13 @@ class PCSim_gui:
         wg.create_button(parameters_frame, "Save preset", 25, 0, command=self.save_preset_TL)
         wg.create_button(parameters_frame, "Load preset", 25, 1, command=self.load_preset_TL)
 
-        ExitButton = wg.create_button(parameters_frame, "Exit", 26, 0, padx = 60, command=self.master.quit)
+        ExitButton = wg.create_button(parameters_frame, "Exit", 26, 0, padx = 60, command=self.close_app)
 
     def initialize_vars(self):
 
-        config_path  = os.path.join(os.path.dirname(__file__), "config")
+        # OLD
+        #config_path  = os.path.join(os.path.dirname(__file__), "config")
+        config_path = resource_path("GUI/config/config_inline.json")
 
          # Inline
         self.i_n= tk.IntVar()
@@ -289,7 +317,7 @@ class PCSim_gui:
         self.i_detector_pixel_size = tk.DoubleVar()
         self.i_zip_var = tk.BooleanVar(value=False)
 
-        with open(os.path.join(config_path, 'config_inline.json')) as json_path:
+        with open(config_path) as json_path:
             #default_TLRec_conf = json.load(os.path.join(config_path, 'config_inline.json'))
 
             default_inline_conf = json.load(json_path)
@@ -332,8 +360,10 @@ class PCSim_gui:
         self.c_zip_var = tk.BooleanVar(value=False)
         #self.c_image_option = tk.StringVar()
         #self.c_resolution = tk.IntVar()
+        
+        config_path_checkTL = resource_path("GUI/config/config_checkTL.json")
 
-        with open(os.path.join(config_path, 'config_checkTL.json')) as json_path:
+        with open(config_path_checkTL) as json_path:
             #default_TLRec_conf = json.load(os.path.join(config_path, 'config_inline.json'))
 
             default_checkTL_conf = json.load(json_path)
@@ -388,8 +418,10 @@ class PCSim_gui:
         self.TL_detector_pixel_size = tk.IntVar()
         self.TL_image_option = tk.StringVar()
         self.TL_zip_var = tk.BooleanVar(value=False)
+        
+        config_path_TLSim = resource_path("GUI/config/config_TLSim.json")
 
-        with open(os.path.join(config_path, 'config_TLSim.json')) as json_path:
+        with open(config_path_TLSim) as json_path:
             #default_TLRec_conf = json.load(os.path.join(config_path, 'config_inline.json'))
 
             default_TL_conf = json.load(json_path)
@@ -476,17 +508,31 @@ class PCSim_gui:
             #PSF_source = MySource.Source_PSF((n,n), M)
 
             Sample = [MyObject1]
-
-            Intensity = exp.Experiment_Inline(n, MyGeometry, MySource, MyDetector, Sample)
+            progress_cb = self.make_progress_callback("Inline simulation")
+            Intensity = exp.Experiment_Inline(n, MyGeometry, MySource, MyDetector, Sample, progress_cb=progress_cb)
             
+            def update_gui():
+                self.clear_frame(self.i_results_frame)
+                self.Plot_Figure(self.i_results_frame, Intensity, 0, 0, (3, 3), 'Inline Simulation')
+                wg.create_button(self.i_results_frame, 'Save Image', 1, 0,
+                                command=lambda: self.save_image(Intensity))
+
+                if self.i_zip_var.get():
+                    self.export_inline_zip(Intensity)
+
+            self.master.after(0, update_gui)
+            
+            '''
             self.clear_frame(self.i_results_frame)
             self.Plot_Figure(self.i_results_frame, Intensity,0,0, (3,3), 'Inline Simulation')
             bt1 = wg.create_button(self.i_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensity))
             
+            #
             if self.i_zip_var.get():
                 self.export_inline_zip(Intensity)
                 
             self.set_status("Inline simulation finished!")
+            '''
 
         self.run_with_error_handling(_run, "Running Inline simulation...")
         
@@ -522,14 +568,24 @@ class PCSim_gui:
                 Material = None
                 title = 'pi/2-phase Grating'
 
-            Intensities= check_Talbot.Talbot_carpet(n, MySource, Period, DC, multiples, iterations, grating_type,pixel_size, Energy, material=Material, grating_height= bar_height)
             
+            Intensities= check_Talbot.Talbot_carpet(n, MySource, Period, DC, multiples, iterations, grating_type,pixel_size, Energy, material=Material, grating_height= bar_height)
+            def update_gui():
+                self.clear_frame(self.c_results_frame)
+                self.Plot_check_TL(self.c_results_frame, Intensities, 0, 0, (3,3), title, multiples, n)
+                wg.create_button(self.c_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensities))
+            
+            self.master.after(0, update_gui)
+            
+            '''
+            self.master.after(0, update_gui)
             self.clear_frame(self.c_results_frame)
             self.Plot_check_TL(self.c_results_frame, Intensities, 0, 0, (3,3), title, multiples, n)
             bt1 = wg.create_button(self.c_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensities))
+            '''
         
         self.run_with_error_handling(_run, "Running Talbot carpet simulation...")
-        self.set_status("Talbot carpet simulation finished!")
+        #self.set_status("Talbot carpet simulation finished!")
 
     def RunTL(self):
         def _run():
@@ -593,9 +649,22 @@ class PCSim_gui:
 
             G1 = obj.Grating(n , Period_G1, 0.5, pixel_size, 'Si', DSG1, grating_type = G1_type, design_energy = design_energy)
             G2 = obj.Grating(n , G2Period, 0.5, pixel_size, 'Au', DSG1+distance, 40,grating_type = 'custom', design_energy = design_energy)
-
-            i, ir = exp.Experiment_Phase_Stepping(n, MyDetector, MySource, geometry, Objects, G1, G2, configuration, padding = 0)
+            progress_cb = self.make_progress_callback("TL simulation")
+            i, ir = exp.Experiment_Phase_Stepping(n, MyDetector, MySource, geometry, Objects, G1, G2, configuration, padding = 0, progress_cb=progress_cb)
             
+            def update_gui():
+                self.clear_frame(self.TL_results_frame)
+                self.Plot_Modulation_Curve(self.TL_results_frame, i, ir, 0, 0, (3,3), 'Phase Stepping Curve', columnspan=2)
+                self.Plot_Figure(self.TL_results_frame, i[0,:,:], 1, 0, (3,3), 'One Projection', columnspan=2)
+                wg.create_button(self.TL_results_frame, 'Save Stack Object Images', 2,0, command=  lambda : self.save_stack_image(i))
+                wg.create_button(self.TL_results_frame, 'Save Stack Reference Images', 2,1, command=  lambda : self.save_stack_image(ir))
+            
+                if self.TL_zip_var.get():
+                    self.export_TL_zip(i, ir)
+                
+            self.master.after(0, update_gui)
+            
+            '''
             self.clear_frame(self.TL_results_frame)
             self.Plot_Modulation_Curve(self.TL_results_frame, i, ir, 0, 0, (3,3), 'Phase Stepping Curve', columnspan=2)
             self.Plot_Figure(self.TL_results_frame, i[0,:,:], 1, 0, (3,3), 'One Projection', columnspan=2)
@@ -604,9 +673,10 @@ class PCSim_gui:
             
             if self.TL_zip_var.get():
                 self.export_TL_zip(i, ir)
+            '''
         
         self.run_with_error_handling(_run, "Running Talbot-Lau simulation...")
-        self.set_status("Talbot-Lau simulation finished!")
+        #self.set_status("Talbot-Lau simulation finished!")
         #DPC, Phase, At, Transmission, DF = DPC_Retrieval(ib, ibr, G2Period, DSO, distance,0,mean_energy)
 
     def modify_DOD(self, event):
@@ -685,7 +755,7 @@ class PCSim_gui:
 
 
     def Plot_Modulation_Curve(self, frame, image, image_reference,row, column, figsize, title, columnspan=1):
-        plt.close()
+        
         params = {"text.color" : "white",
           "xtick.color" : "white",
           "ytick.color" : "white",
@@ -693,9 +763,8 @@ class PCSim_gui:
           "axes.grid": True,
           #"legend.labelcolor": 'black'
           }
-        plt.rcParams.update(params)
-        plt.tight_layout()
-
+        rcParams.update(params)
+        
         fig=Figure(figsize=figsize)
         fig.set_facecolor("#333333")
         ax = fig.add_subplot(1,1,1)
@@ -705,6 +774,7 @@ class PCSim_gui:
         ax.legend()
         ax.set_title(title)
         ax.set_xlabel('Phase Stepping')
+        fig
         #plt.show()
         canvas1 = FigureCanvasTkAgg(fig, master=frame)
         canvas1.draw()
@@ -713,14 +783,13 @@ class PCSim_gui:
         #toolbarFrame1.grid(row=row+1,column=column)
 
     def Plot_check_TL(self, frame, image, row, column, figsize, title, multiples, n):
-        plt.close()
+        
         params = {"text.color" : "white",
           "xtick.color" : "white",
           "ytick.color" : "white",
           "axes.grid": False,
           "axes.labelcolor": "white"}
-        plt.rcParams.update(params)
-        plt.tight_layout()
+        rcParams.update(params)
 
         fig=Figure(figsize=figsize)
         fig.set_facecolor("#333333")
@@ -730,12 +799,12 @@ class PCSim_gui:
         ax.set_title(title)
         ax.set_xlabel('Multiples of Talbot distance')
         fig.colorbar(im,ax=ax)
-        #plt.show()
+        fig.tight_layout()
+
         canvas1 = FigureCanvasTkAgg(fig, master=frame)
         canvas1.draw()
         canvas1.get_tk_widget().grid(row=row, column=column, ipadx=90, ipady=20)
-        #toolbarFrame1 = tk.Frame(master=frame)
-        #toolbarFrame1.grid(row=row+1,column=column)
+
     
     def initialize_Figure(self, frame, figsize, row, column):
 
@@ -748,6 +817,30 @@ class PCSim_gui:
 
 
     def Plot_Figure(self, frame, image, row, column, figsize, title, columnspan=1):
+        
+        params = {
+        "text.color": "white",
+        "xtick.color": "white",
+        "ytick.color": "white",
+        "axes.grid": False,
+        "axes.labelcolor": "white",
+        }
+        rcParams.update(params)
+
+        fig = Figure(figsize=figsize)
+        fig.set_facecolor("#333333")
+        ax = fig.add_subplot(1, 1, 1)
+
+        im = ax.imshow(image, "gray")
+        ax.set_title(title)
+        fig.colorbar(im, ax=ax)
+        fig.tight_layout()
+
+        canvas1 = FigureCanvasTkAgg(fig, master=frame)
+        canvas1.draw()
+        canvas1.get_tk_widget().grid(row=row, column=column, columnspan=columnspan, ipadx=90, ipady=20)
+        
+        '''
         plt.close()
         params = {"text.color" : "white",
           "xtick.color" : "white",
@@ -770,6 +863,7 @@ class PCSim_gui:
         canvas1.get_tk_widget().grid(row=row, column=column, columnspan=columnspan, ipadx=90, ipady=20)
         toolbarFrame1 = tk.Frame(master=frame)
         toolbarFrame1.grid(row=row+1,column=column)
+        '''
 
     def open_params(self):
 
@@ -794,7 +888,8 @@ class PCSim_gui:
             orientationL,_ = wg.create_label_combobox(paramsFrame, 'Orientation', ORIENTATION_OPTIONS, 4,0,textvariable=self.i_orientation)
             
         
-        materialL,_ = wg.create_label_file_combobox(paramsFrame,'Material', os.path.join(self.parent_path, 'Resources','complex_refractive_index'),5,0, self.i_material)
+        complex_refractive_index_path = resource_path("Resources/complex_refractive_index")
+        materialL,_ = wg.create_label_file_combobox(paramsFrame,'Material', complex_refractive_index_path,5,0, self.i_material)
         
 
         ApplyButton = wg.create_button(paramsFrame, 'Apply Changes', 9,0 ,padx = 20, pady= 10, command = self.apply_changes)
@@ -821,7 +916,8 @@ class PCSim_gui:
             yshiftL,_ = wg.create_label_entry(paramsFrame, "Y-direction shift (pixels):", 3, 0,textvariable=self.TL_yshift)
             orientationL,_ = wg.create_label_combobox(paramsFrame, 'Orientation', ORIENTATION_OPTIONS, 4,0,textvariable=self.TL_orientation)
 
-        materialL,_ = wg.create_label_file_combobox(paramsFrame,'Material', os.path.join(self.parent_path, 'Resources','complex_refractive_index'),5,0, self.TL_material)
+        complex_refractive_index_path = resource_path("Resources/complex_refractive_index")
+        materialL,_ = wg.create_label_file_combobox(paramsFrame,'Material', complex_refractive_index_path,5,0, self.TL_material)
         ApplyButton = wg.create_button(paramsFrame, 'Apply Changes', 9,0 ,padx = 20, pady= 10, command = self.apply_changes)
         
     def save_preset_TL(self):
@@ -1020,6 +1116,41 @@ class PCSim_gui:
         self.status_var.set(text)
         self.master.update_idletasks()
         
+    def set_status_threadsafe(self, text):
+        self.master.after(0, self.set_status, text)
+        
+    def set_progress(self, value):
+        self.progress_var.set(value)
+        self.master.update_idletasks()
+        
+    def set_progress_threadsafe(self, value):
+        self.master.after(0, lambda: self.set_progress(value))
+
+    def reset_progress(self):
+        self.set_progress(0.0)
+        
+    def reset_progress_threadsafe(self):
+        self.master.after(0, self.reset_progress)
+    
+    def make_progress_callback(self, prefix):
+        def cb(fraction):
+            try:
+                frac = float(fraction)
+            except Exception:
+                frac = 0.0
+            frac = max(0.0, min(1.0, frac))
+            percent = frac * 100.0
+
+            def _update():
+                self.set_progress(percent)
+                self.update_loading_overlay(percent, prefix=prefix)
+                self.set_status(f"{prefix}... {int(percent)} %")
+
+            self.master.after(0, _update)
+
+        return cb
+
+    
     def export_inline_zip(self, intensity_array):
         """Export inline simulation config + result as a ZIP."""
 
@@ -1094,15 +1225,181 @@ class PCSim_gui:
             zf.writestr("README.txt", readme_text)
 
     def run_with_error_handling(self, func, status_text):
-        try:
-            self.set_status(status_text)
-            func()
-            self.set_status(status_text.replace("...", " finished!"))
-        except Exception as e:
-            self.set_status("Error.")
-            traceback.print_exc()
+        def worker():
+            try:
+                self.set_status_threadsafe(status_text)
+                self.reset_progress_threadsafe()
+                base_text = status_text.replace("...", "")
+                self.update_loading_overlay_threadsafe(0.0, prefix=base_text or "Loading")
+        
+                func()
+                self.set_progress_threadsafe(100.0)
+                self.update_loading_overlay_threadsafe(100.0, prefix=base_text or "Loading")
+                self.set_status_threadsafe(status_text.replace("...", " finished!"))
+            except Exception as e:
+                traceback.print_exc()
+                self.set_status_threadsafe("Error.")
+                self.reset_progress_threadsafe()
+                self.show_error_threadsafe(e)
+            finally:
+                self.set_ui_busy_threadsafe(False)
+                self.hide_loading_overlay_threadsafe()
+
+        self.set_ui_busy(True)
+        base_text = status_text.replace("...", "")
+        self.show_loading_overlay_threadsafe(base_text if base_text else "Loading")
+        threading.Thread(target=worker, daemon=True).start() # Run in daemon thread
+        
+    def show_error_threadsafe(self, e):
+        def _show():
             messagebox.showerror("Error", f"An error occurred:\n{e}")
+        self.master.after(0, _show)
             
     def clear_frame(self, frame):
         for widget in frame.winfo_children():
             widget.destroy()
+            
+    def set_ui_busy(self, busy: bool):
+        """
+        busy = True  -> disable
+        busy = False -> normal
+        """
+        state = "disabled" if busy else "normal"
+        
+        INTERACTIVE_TYPES = (
+            tk.Button, ttk.Button,
+            tk.Entry, ttk.Entry,
+            ttk.Combobox,
+            tk.Checkbutton, ttk.Checkbutton,
+            tk.Radiobutton, ttk.Radiobutton,
+            tk.Spinbox,
+            ToggleButton,
+        )
+
+        def recurse(widget):
+            for child in widget.winfo_children():
+                if isinstance(child, INTERACTIVE_TYPES):
+                    try:
+                        child.configure(state=state)
+                    except tk.TclError:
+                        pass
+                recurse(child)
+
+        recurse(self.master)
+
+        try:
+            self.master.configure(cursor="watch" if busy else "")
+        except tk.TclError:
+            pass
+        
+    def set_ui_busy_threadsafe(self, busy: bool):
+        self.master.after(0, lambda: self.set_ui_busy(busy))
+        
+    #Transparent Loading Screen
+    
+    def _sync_overlay_to_master(self, event=None):
+        if self.overlay is None:
+            return
+
+        try:
+            self.overlay.deiconify()
+            self.overlay.lift(self.master)
+        except tk.TclError:
+            return
+
+        self.master.update_idletasks()
+        w = self.master.winfo_width()
+        h = self.master.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+
+        x = self.master.winfo_rootx()
+        y = self.master.winfo_rooty()
+        self.overlay.geometry(f"{w}x{h}+{x}+{y}")
+    
+    def show_loading_overlay(self, message="Loading"):
+
+        if self.overlay is not None and self.overlay.winfo_exists():
+            try:
+                self.overlay.lift(self.master)
+            except tk.TclError:
+                pass
+            return
+
+        self.master.update_idletasks()
+        x = self.master.winfo_rootx()
+        y = self.master.winfo_rooty()
+        w = self.master.winfo_width()
+        h = self.master.winfo_height()
+
+        overlay = tk.Toplevel(self.master)
+        overlay.overrideredirect(True)
+        overlay.attributes("-alpha", 0.75)
+        overlay.configure(background="#000000")
+        overlay.geometry(f"{w}x{h}+{x}+{y}")
+        overlay.lift(self.master)
+        overlay.transient(self.master)
+
+        frame = tk.Frame(overlay, bg="#000000")
+        frame.pack(expand=True, fill="both")
+
+        label = tk.Label(
+            frame,
+            text=message,
+            fg="white",
+            bg="#000000",
+            font=("Segoe UI", 16, "bold")
+        )
+        label.pack(pady=10)
+
+        pb_var = tk.DoubleVar(value=0.0)
+        pb = ttk.Progressbar(
+            frame,
+            variable=pb_var,
+            maximum=100,
+            mode="determinate",
+            length=250
+        )
+        pb.pack(pady=10)
+
+        self.overlay = overlay
+        self.overlay_label = label
+        self.overlay_progress = pb
+        self.overlay_progress_var = pb_var
+
+        overlay.update_idletasks()
+        
+    def show_loading_overlay_threadsafe(self, message="Loading"):
+        self.master.after(0, lambda: self.show_loading_overlay(message))
+
+    def update_loading_overlay(self, percent, prefix="Loading"):
+        if self.overlay is None or not self.overlay.winfo_exists():
+            self.show_loading_overlay(prefix)
+
+        try:
+            if self.overlay_label is not None:
+                self.overlay_label.config(text=f"{prefix}... {int(percent)} %")
+            if self.overlay_progress_var is not None:
+                self.overlay_progress_var.set(percent)
+
+            self.overlay.lift(self.master)
+        except tk.TclError:
+            pass
+            
+    def update_loading_overlay_threadsafe(self, percent, prefix="Loading"):
+        self.master.after(0, lambda: self.update_loading_overlay(percent, prefix))
+
+    def hide_loading_overlay(self):
+        if self.overlay is not None:
+            try:
+                self.overlay.destroy()
+            except tk.TclError:
+                pass
+
+        self.overlay = None
+        self.overlay_label = None
+        self.overlay_progress = None
+        self.overlay_progress_var = None
+        
+    def hide_loading_overlay_threadsafe(self):
+        self.master.after(0, self.hide_loading_overlay)

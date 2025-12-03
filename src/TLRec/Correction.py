@@ -1,10 +1,13 @@
 import numpy as np
 
 try:
-    from numba import njit, jit
-    #fastmath = False
+    from numba import njit
 except Exception as err:
-    print(f'Numba cannot be imported: {err}')
+    #print(f'Numba cannot be imported: {err}')
+    def njit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 def calculate_C_matrix(images):
     if len(images.shape) == 3:

@@ -1,15 +1,18 @@
 import numpy as np
 import os
-from skimage import io, restoration
 import tifffile as tif
 from PIL import Image
-import matplotlib.pyplot as plt
 import scipy.fftpack as fftpack
-from scipy.ndimage import gaussian_filter, generic_filter
+from scipy.ndimage import generic_filter
+
 try:
-  from numba import jit
+    from numba import jit
 except Exception as err:
-  print(f'Numba cannot be imported: {err}')
+    #print(f'Numba cannot be imported: {err}')
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 """
 In this file there are some useful functions to make different calculations.
@@ -110,7 +113,8 @@ def read_Tiff_file(name):
     file_images =os.path.join(path_to_Data, name+'.tif')
   except:
     file_images = os.path.abspath(name)
-  image = io.imread(file_images)
+    
+  image = tif.imread(file_images)
   return image
 
 def save_results(filename_images,Diff_Phase,attenuation,Dark_Field,Phase):

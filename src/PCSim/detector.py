@@ -1,5 +1,7 @@
 import numpy as np
-from skimage.transform import rescale, resize, downscale_local_mean
+#from skimage.transform import resize, downscale_local_mean
+from scipy.ndimage import zoom, gaussian_filter
+
 # TODO: Finish the detector response 
 class Detector():
     def __init__(self, Image_option, pixel_size_detector, FWHM_detector, noise_type, pixel_size, gaussian_sigma=0.0):
@@ -137,17 +139,19 @@ class Detector():
         
         int_factor = int(round(factor))
         if np.isclose(factor, int_factor, atol=1e-6):
+            #print("downsample local mean")
             H, W = image.shape
             Hc = (H // int_factor) * int_factor
             Wc = (W // int_factor) * int_factor
             cropped = image[:Hc, :Wc]
-            return downscale_local_mean(cropped, (int_factor, int_factor))
+            #return downscale_local_mean(cropped, (int_factor, int_factor))
+            return self._downscale_local_mean_numpy(cropped, int_factor)
         # Slower
         else:
             new_shape = (int(round(image.shape[0] / factor)),
                             int(round(image.shape[1] / factor)))
-            return resize(image, new_shape, order=1, mode="reflect",
-                            anti_aliasing=True, preserve_range=True)
+            #return resize(image, new_shape, order=1, mode="reflect", anti_aliasing=True, preserve_range=True)
+            return self._resize_linear_reflect(image, new_shape)
 
     def applyDetector(self, image, current_pixel_size=None):
         """
@@ -157,7 +161,7 @@ class Detector():
             current_pixel_size = self.pixel_size
 
         if self.Image_option == "Ideal":
-            out = self.downsample_image(image, current_pixel_size=self.pixel_size_detector)
+            out = self.downsample_image(image, current_pixel_size=current_pixel_size) # There was a bug here
             return out
 
         # Realistic
@@ -169,4 +173,30 @@ class Detector():
             return down
         return self.add_noise(down)
 
+
+    def _resize_linear_reflect(self, image, new_shape):
+        new_h, new_w = new_shape
+        scale_h = new_h / image.shape[0]
+        scale_w = new_w / image.shape[1]
+        out = image.astype(float)
+
+        # Anti-aliasing approximation
+        if scale_h < 1 or scale_w < 1:
+            sigma_h = max(0, (1/scale_h - 1) * 0.5)
+            sigma_w = max(0, (1/scale_w - 1) * 0.5)
+            out = gaussian_filter(out, sigma=(sigma_h, sigma_w), mode="reflect")
+
+        zoom_factors = (scale_h, scale_w)
+        return zoom(out, zoom_factors, order=1, mode="reflect")
+    
+    def _downscale_local_mean_numpy(self, image, int_factor):
+        """
+        Similar to skimage.transform.downscale_local_mean
+        """
+        H, W = image.shape
+        Hc = (H // int_factor) * int_factor
+        Wc = (W // int_factor) * int_factor
+        cropped = image[:Hc, :Wc]
+       
+        return cropped.reshape(Hc // int_factor, int_factor, Wc // int_factor, int_factor).mean(axis=(1, 3))
 

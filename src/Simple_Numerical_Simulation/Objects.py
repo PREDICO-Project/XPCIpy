@@ -1,5 +1,6 @@
 import numpy as np
-import cv2
+from skimage.transform import resize
+#import cv2
 class GeometricObject():
     def __init__(self,n,pixel_size,delta,beta):
         self.n = n
@@ -64,10 +65,16 @@ class GeometricObject():
     
         laplacian = self.Obtain_Phase_Laplacian()
         nx, ny = laplacian.shape
-        laplacian_magnificated = cv2.resize(laplacian,(int(M*nx),int(M*ny)), interpolation=cv2.INTER_NEAREST)
+        x, ny = laplacian.shape
+        new_width  = int(M * nx)
+        new_height = int(M * ny)
+        
+        laplacian_magnificated = resize(laplacian, (new_height, new_width), order=0, mode="edge", anti_aliasing=False, preserve_range=True)
+        #laplacian_magnificated = cv2.resize(laplacian,(int(M*nx),int(M*ny)), interpolation=cv2.INTER_NEAREST)
         intensity_refraction = 1 - distance * wavelength /(2*np.pi*M)*laplacian_magnificated
         intensity_attenuation = self.a0_Distribution()
-        intensity_attenuation_magnified = cv2.resize(intensity_attenuation,(int(M*nx),int(M*ny)), interpolation=cv2.INTER_NEAREST)
+        intensity_attenuation_magnified = resize(intensity_attenuation, (new_height, new_width), order=0, mode="edge", anti_aliasing=False, preserve_range=True)
+        #intensity_attenuation_magnified = cv2.resize(intensity_attenuation,(int(M*nx),int(M*ny)), interpolation=cv2.INTER_NEAREST)
         intensity = intensity_refraction * intensity_attenuation_magnified
 
         Fresnel_number = self.pixel_size**2/(wavelength*distance)

@@ -1,6 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import warnings
 
 def create_propagator(n,pixel_size,distance, energy):
     # Fresnel propagator
