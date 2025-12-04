@@ -109,6 +109,8 @@ class TLRec_GUI:
         self.overlay = None
         self.overlay_label = None
         
+        self.click_markers = {}
+        
         stl.configure_style()
         
         self.generate_load_files_frame()
@@ -217,27 +219,60 @@ class TLRec_GUI:
 
         self.set_status("Loading object images...")
         filename = filedialog.askopenfilename()
-        self.filenameEntry.delete(0, tk.END)
-        self.filenameEntry.insert(0, os.path.basename(filename))
+        if not filename:
+            self.set_status("Object image loading cancelled.")
+            return
         
-        self.images = tifffile.imread(filename)
+        images = tifffile.imread(filename)
+        obj_label = os.path.basename(filename)
+        ref_label = self.filename_r_Entry.get() or "Reference"
         #self.images = io.imread(filename)
 
+        self.load_stacks(images, self.images_reference, obj_label=obj_label, ref_label=ref_label, status_text="Object images loaded!")
+        
+    def load_from_arrays(self, images, images_reference, label="Simulation"):
+        
+        obj_label = f"{label}_object (memory)"
+        ref_label = f"{label}_reference (memory)"
+
+        self.load_stacks(images, images_reference, obj_label=obj_label, ref_label=ref_label, status_text="Simulation images loaded into TLRec.")  
+        
+    def load_stacks(self, images, images_reference, obj_label="Object", ref_label="Reference", status_text="Images loaded!"):
+        
+        self.images = np.asarray(images)
+        self.images_reference = np.asarray(images_reference)
+        
+        self.filenameEntry.delete(0, tk.END)
+        self.filenameEntry.insert(0, obj_label)
+
+        self.filename_r_Entry.delete(0, tk.END)
+        self.filename_r_Entry.insert(0, ref_label)
+        
         self.update_canvas(self.canvas_object, self.images[0])
         self.update_canvas(self.canvas_reference, self.images_reference[0])
         
         (z,y,x) = self.images.shape
         (zr,yr,xr) = self.images_reference.shape
         
-        j = tk.IntVar()
-        jr = tk.IntVar()
+        for child in self.Frame_images.winfo_children():
+            if isinstance(child, tk.Scale):
+                child.destroy()
+        for child in self.Frame_Ref_images.winfo_children():
+            if isinstance(child, tk.Scale):
+                child.destroy()
         
-
-        def Change_Images(j):
-            #self.Show_Image(images, int(j)-1, self.Frame_images)
-            self.update_canvas(self.canvas_object, self.images[int(j)-1])
-        def Change_Ref_Images(jr):
-            self.update_canvas(self.canvas_reference, self.images_reference[int(jr)-1])
+        j = tk.IntVar(value=1)
+        jr = tk.IntVar(value=1)
+        
+        def Change_Images(val):
+            idx = int(float(val)) - 1
+            idx = max(0, min(z - 1, idx))
+            ##self.Show_Image(images, int(j)-1, self.Frame_images)
+            self.update_canvas(self.canvas_object, self.images[idx])
+        def Change_Ref_Images(val):
+            idx = int(float(val)) - 1
+            idx = max(0, min(z - 1, idx))
+            self.update_canvas(self.canvas_reference, self.images_reference[idx])
             #self.Show_Image(images_reference, int(jr)-1, self.Frame_Ref_images)
         
         slider1 = tk.Scale(self.Frame_images, from_=1, to=z, resolution = 1, orient='horizontal', variable= j,command = Change_Images, bg = 'gray20', fg='white', troughcolor='white', highlightthickness=0) 
@@ -249,8 +284,9 @@ class TLRec_GUI:
         self.Algorithm_ComboBoxLabel['state'] = 'normal'
         self.Algorithm_ComboBox['state'] = 'normal'
         self.UploadButton['state'] = 'normal'
+        self.RetrieveButton['state'] = 'normal'
         
-        self.set_status("Object images loaded!")
+        self.set_status(status_text)
 
     def Open_config_params(self):
 
@@ -481,7 +517,33 @@ class TLRec_GUI:
                 self.Y_position.delete(0, tk.END)
                 self.Y_position.insert(0, str(y))
                 self.Compare_Fit(self.images, self.images_reference, x, y, self.Algorithm_ComboBox)
+                
+                pc_meta = getattr(self, "pc_image_meta", None)
+                if not pc_meta:
 
+                    axes = event.inaxes
+                    if axes is None:
+                        return
+                    marker = self.click_markers.get(axes)
+                    if marker is None:
+                        marker, = axes.plot(x, y, "r+", markersize=8, mew=1.5)
+                        self.click_markers[axes] = marker
+                    else:
+                        marker.set_data([x], [y])
+                    axes.figure.canvas.draw_idle()
+                    return
+
+                for meta in pc_meta.values():
+                    img = meta["im"]
+                    axes = img.axes
+                    marker = self.click_markers.get(axes)
+                    if marker is None:
+                        marker, = axes.plot(x, y, "r+", markersize=8, mew=1.5)
+                        self.click_markers[axes] = marker
+                    else:
+                        marker.set_data([x], [y])
+
+                    axes.figure.canvas.draw_idle()
         fig.canvas.mpl_connect("button_press_event", onclick)
         
     def create_phase_wiener_panel(self):
@@ -518,13 +580,8 @@ class TLRec_GUI:
         ttk.Entry(self.phase_wiener_frame, textvariable=self.s, width=8).grid(
             row=2, column=1, sticky="w", padx=3)
 
-        ttk.Button(
-            self.phase_wiener_frame,
-            text="Apply",
-            command=self.reapply_wiener_to_phase,
-            style="TButton",
-            width=12
-        ).grid(row=3, column=0, columnspan=2, pady=(5, 2))
+        ttk.Button(self.phase_wiener_frame, text="Apply", command=self.reapply_wiener_to_phase,
+            style="TButton", width=12).grid(row=3, column=0, columnspan=2, pady=(5, 2))
 
         self.phase_wiener_frame.columnconfigure(1, weight=1)
         

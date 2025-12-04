@@ -31,6 +31,10 @@ from tkinter import messagebox
 import sys
 from GUI.utils import resource_path
 import threading
+from src.PCSim import utils as pcsim_utils
+from GUI.ui.tooltips import ToolTip
+from GUI.pages.help_window import HelpWindow
+from GUI.pages.info_windows import LicenseWindow, CiteWindow
 
 class PCSim_gui:
 
@@ -80,6 +84,18 @@ class PCSim_gui:
         self.tab_container = ttk.Notebook(self.master)
     
         self.tab_container.grid(row=0, column=0, sticky="nsew")
+        
+        # HELP
+        menubar = tk.Menu(self.master)
+        self.master.config(menu=menubar)
+
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="Help / User Guide", command=self.open_help_window)
+        help_menu.add_command(label="How to cite XPCIpy", command=self.open_cite_window)
+        help_menu.add_command(label="License", command=self.open_license_window)
+        
+        menubar.add_cascade(label="Help", menu=help_menu)
+        
 
         global Beam_Shape_OPTIONS, Beam_Spectrum_OPTIONS, Object_OPTIONS, Image_OPTIONS
         #spectra_path = os.path.join(self.parent_path, 'Resources', 'Spectra') # OLD
@@ -98,6 +114,15 @@ class PCSim_gui:
         self.master.quit()
         self.master.destroy()
         sys.exit(0)
+        
+    def open_help_window(self):
+        HelpWindow(self.master)
+        
+    def open_license_window(self):
+        LicenseWindow(self.master)
+
+    def open_cite_window(self):
+        CiteWindow(self.master)
         
     def create_tabs(self):
         # Create a Frame for each tab
@@ -127,7 +152,7 @@ class PCSim_gui:
         #self.TLRec_tab.grid_columnconfigure(0, weight=1)
         #scrollframe = vsf(self.TLRec_tab)
         #scrollframe.grid(row=0, column=0, sticky="nsew")
-        TLRec_GUI(container, status_var=self.status_var)
+        self.tlrec_gui = TLRec_GUI(container, status_var=self.status_var)
         #TLRec_GUI(self.TLRec_tab)
 
     def populate_inline_tab(self):
@@ -179,6 +204,20 @@ class PCSim_gui:
         wg.create_button(parameters_frame, "Load preset", 15, 1, command=self.load_preset_Inline)
 
         ExitButton = wg.create_button(parameters_frame, "Exit", 16, 0, padx = 60, command=self.close_app)
+        
+        
+        self.add_tooltip(nLabel, "Number of pixels of the simulated wavefront (n x n).")
+        self.add_tooltip(pxLabel, "Pixel size of the wavefront grid in micrometers.")
+        self.add_tooltip(self.BeamShapeLabel, "Beam geometry: 'Plane' = parallel beam, 'Conical' = diverging cone.")
+        self.add_tooltip(self.BeamSpectrumLabel, "Select a spectrum file or 'Monoenergetic' for a single energy.")
+        self.add_tooltip(self.DSOLabel, "Distance from the source to the object in centimeters.")
+        self.add_tooltip(self.FWHMSouLabel, "Full Width at Half Maximum (FWHM) of the source in micrometers.")
+        self.add_tooltip(self.BeamEnergyL, "Energy of the beam in keV. Used for wavelength-dependent calculations.")
+        self.add_tooltip(self.ObjectLabel, "Type of object to simulate: 'Sphere' or 'Cylinder'.")
+        self.add_tooltip(self.DetectorL, "Type of image to simulate: 'Ideal' (perfect detector) or 'Realistic' (with detector effects).")
+        self.add_tooltip(self.PixelDetectorL, "Pixel size of the detector in micrometers.")
+        self.add_tooltip(self.ResolutionL, "Detector resolution specified as Full Width at Half Maximum (FWHM) in micrometers.")
+        self.add_tooltip(self.RunButton, "Start the inline phase contrast simulation with the specified parameters.")
 
     def populate_checkTL_tab(self):
         
@@ -218,6 +257,20 @@ class PCSim_gui:
         self.RunButton = wg.create_button(parameters_frame, 'Run', 12,0,command = self.RunCheckTL)
 
         ExitButton = wg.create_button(parameters_frame, "Exit", 13, 0, padx = 60, command=self.close_app)
+        
+        self.add_tooltip(nLabel, "Number of pixels of the simulated wavefront (n x n).")
+        self.add_tooltip(pxLabel, "Pixel size of the wavefront grid in micrometers.")
+        self.add_tooltip(FWHMSouLabel, "Full Width at Half Maximum (FWHM) of the source in micrometers.")
+        self.add_tooltip(EnergyL, "Design energy of the setup in keV.")
+        self.add_tooltip(PeriodL, "Period of the gratings in micrometers.")
+        self.add_tooltip(DCL, "Duty Cycle (DC) of the gratings, defined as the ratio between the bar width and the grating period.")
+        self.add_tooltip(materialL, "Material of the grating bars (only used for 'Custom' grating type).")
+        self.add_tooltip(barHeightL, "Height of the grating bars in micrometers (only used for 'Custom' grating type).")
+        self.add_tooltip(gratigL, "Type of grating: 'Custom' allows user-defined parameters, 'Phase pi/2' and 'Phase pi' are standard phase gratings.")
+        self.add_tooltip(multiplesL, "Multiple of Talbot distance (maximum distance).")
+        self.add_tooltip(iterationsL, "Number of distances calculated.")
+        self.add_tooltip(self.RunButton, "Start the Talbot-Lau effect check simulation with the specified parameters.")
+        # Add informational text box
         font = {'family': 'serif',
         'color':  'lightgray',
         'weight': 'normal',
@@ -250,7 +303,8 @@ class PCSim_gui:
         
         parameters_frame = ttk.Frame(container, style='TFrame')
         parameters_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
-        parameters_frame.bind("<Button-1>", self.modify_DOD)
+        #parameters_frame.bind("<Button-1>", self.modify_DOD)
+        
         self.TL_results_frame = ttk.Frame(container, style='TFrame')
         self.TL_results_frame.grid(row = 0, column = 2, rowspan=12,  sticky='nsew')
 
@@ -258,35 +312,72 @@ class PCSim_gui:
         
         nLabel, _ = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.TL_n,padx = 20)
         pxLabel, _ = wg.create_label_entry(parameters_frame, 'Pixel size (microns)', 1, 0,textvariable=self.TL_pixel_size,padx = 20)
-        wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 2, 0,textvariable=self.TL_FWHM_source,padx = 20)
-        wg.create_label_combobox(parameters_frame, label_text='Beam Shape',row = 3 ,column =0, textvariable = self.TL_BeamShape, names = Beam_Shape_OPTIONS)
-        wg.create_label_combobox(parameters_frame, label_text='Spectrum',row = 4 ,column =0, textvariable = self.TL_Beam_Spectrum,names = Beam_Spectrum_OPTIONS)
-        wg.create_label_entry(parameters_frame, 'Design Energy (keV)', row=5, column=0, textvariable=self.TL_beam_energy, padx = 20)
-        wg.create_label_entry(parameters_frame, 'Distance Source-G1 (cm)', 6, 0,textvariable=self.TL_DSO,padx = 20)
-        wg.create_label_entry(parameters_frame, 'Distance Object-G1 (cm)', 7, 0,textvariable=self.TL_DOG1,padx = 20)
-        wg.create_label_entry(parameters_frame, 'Multiple of Talbot distance', 8, 0,textvariable=self.TL_TLmultiple,padx = 20)
-        wg.create_label_entry(parameters_frame, 'Talbot Distance (cm)', 9, 0,textvariable=self.TL_Talbot_distance,padx = 20, state='disable')
-        wg.create_label_entry(parameters_frame, 'Magnification', 10, 0,textvariable=self.TL_M,padx = 20, state='disable')
-        wg.create_label_entry(parameters_frame, 'Distance G1-G2 (cm)', 11, 0,textvariable=self.TL_DOD,padx = 20, state='disable')
-        wg.create_label_entry(parameters_frame, 'G1 Period (microns)', 12, 0,textvariable=self.TL_Period_G1,padx = 20)
-        wg.create_label_entry(parameters_frame, 'G2 Period (microns)', 13, 0,textvariable=self.TL_Period_G2,padx = 20, state = 'disable')
-        wg.create_label_combobox(parameters_frame, label_text='G1 Phase',row = 14 ,column =0, textvariable = self.TL_G1_Phase,names = Grating_OPTIONS)
-        wg.create_label_combobox(parameters_frame, label_text='Movable Grating',row = 15 ,column =0, textvariable = self.TL_MovableGrating, names = Movable_OPTIONS)
-        wg.create_label_entry(parameters_frame, 'Number of steps (int)', 16, 0,textvariable=self.TL_steps,padx = 20)
-        wg.create_label_entry(parameters_frame, 'Step Length (microns)', 17, 0,textvariable=self.TL_step_length,padx = 20)
-        wg.create_label_combobox(parameters_frame, label_text='Object',row = 18 ,column =0, textvariable = self.TL_Object,names = Object_OPTIONS)
+        sourceLabel,_ = wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 2, 0,textvariable=self.TL_FWHM_source,padx = 20)
+        beamShapeLabel, _ = wg.create_label_combobox(parameters_frame, label_text='Beam Shape',row = 3 ,column =0, textvariable = self.TL_BeamShape, names = Beam_Shape_OPTIONS)
+        spectrumLabel, _ =wg.create_label_combobox(parameters_frame, label_text='Spectrum',row = 4 ,column =0, textvariable = self.TL_Beam_Spectrum,names = Beam_Spectrum_OPTIONS)
+        energyLabel,_ = wg.create_label_entry(parameters_frame, 'Design Energy (keV)', row=5, column=0, textvariable=self.TL_beam_energy, padx = 20)
+        DSG1Label,_ = wg.create_label_entry(parameters_frame, 'Distance Source-G1 (cm)', 6, 0,textvariable=self.TL_DSO,padx = 20)
+        DOG1Label,_ = wg.create_label_entry(parameters_frame, 'Distance Object-G1 (cm)', 7, 0,textvariable=self.TL_DOG1,padx = 20)
+        multiplesLabel,_ =wg.create_label_entry(parameters_frame, 'Multiple of Talbot distance', 8, 0,textvariable=self.TL_TLmultiple,padx = 20)
+        TalbotDistanceLabel,_ = wg.create_label_entry(parameters_frame, 'Talbot Distance (cm)', 9, 0,textvariable=self.TL_Talbot_distance,padx = 20, state='disable')
+        Magnification,_ = wg.create_label_entry(parameters_frame, 'Magnification', 10, 0,textvariable=self.TL_M,padx = 20, state='disable')
+        DG1G1Label,_ = wg.create_label_entry(parameters_frame, 'Distance G1-G2 (cm)', 11, 0,textvariable=self.TL_DOD,padx = 20, state='disable')
+        G1PeriodLabel,_ = wg.create_label_entry(parameters_frame, 'G1 Period (microns)', 12, 0,textvariable=self.TL_Period_G1,padx = 20)
+        G2PeriodLabel,_ = wg.create_label_entry(parameters_frame, 'G2 Period (microns)', 13, 0,textvariable=self.TL_Period_G2,padx = 20, state = 'disable')
+        G1PhaseLabel,_ = wg.create_label_combobox(parameters_frame, label_text='G1 Phase',row = 14 ,column =0, textvariable = self.TL_G1_Phase,names = Grating_OPTIONS)
+        MovableLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Movable Grating',row = 15 ,column =0, textvariable = self.TL_MovableGrating, names = Movable_OPTIONS)
+        NumberStepsLabel,_ = wg.create_label_entry(parameters_frame, 'Number of steps (int)', 16, 0,textvariable=self.TL_steps,padx = 20)
+        StepLenghtLabel,_ = wg.create_label_entry(parameters_frame, 'Step Length (microns)', 17, 0,textvariable=self.TL_step_length,padx = 20)
+        ObjectLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Object',row = 18 ,column =0, textvariable = self.TL_Object,names = Object_OPTIONS)
         wg.create_button(parameters_frame, 'Set Object Parameters', 19, 0, command = self.open_params_TL)
-        wg.create_label_combobox(parameters_frame, label_text='Image',row = 20 ,column =0, textvariable = self.TL_image_option,names = Image_OPTIONS)
-        wg.create_label_entry(parameters_frame, 'Detector Pixel Size (microns)', 21, 0,textvariable=self.TL_detector_pixel_size,padx = 20)
-        wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 22, 0,textvariable=self.TL_resolution,padx = 20)
+        ImageOptionLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Image',row = 20 ,column =0, textvariable = self.TL_image_option,names = Image_OPTIONS)
+        DetectorPXLabel,_ = wg.create_label_entry(parameters_frame, 'Detector Pixel Size (microns)', 21, 0,textvariable=self.TL_detector_pixel_size,padx = 20)
+        DetectorResolutionLabel,_ =wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 22, 0,textvariable=self.TL_resolution,padx = 20)
         ToggleButton(parameters_frame, text="Create ZIP with simulation data", variable=self.TL_zip_var).grid(row=23, column=0, pady=5)
         
-        wg.create_button(parameters_frame, 'Run', 24,0,command = self.RunTL)
+        RunBtton = wg.create_button(parameters_frame, 'Run', 24,0,command = self.RunTL)
         
         wg.create_button(parameters_frame, "Save preset", 25, 0, command=self.save_preset_TL)
         wg.create_button(parameters_frame, "Load preset", 25, 1, command=self.load_preset_TL)
 
         ExitButton = wg.create_button(parameters_frame, "Exit", 26, 0, padx = 60, command=self.close_app)
+        
+        self.add_tooltip(nLabel, "Number of pixels of the simulated wavefront (n x n).")
+        self.add_tooltip(pxLabel, "Pixel size of the wavefront grid in micrometers.")
+        self.add_tooltip(beamShapeLabel, "Beam geometry: 'Plane' = parallel beam, 'Conical' = diverging cone.")
+        self.add_tooltip(spectrumLabel, "Select a spectrum file or 'Monoenergetic' for a single energy.")
+        self.add_tooltip(DSG1Label, "Distance from the source to the first grating (G1) in centimeters.")
+        self.add_tooltip(DOG1Label, "Distance from the object to the first grating (G1) in centimeters.")
+        self.add_tooltip(multiplesLabel, "Multiple of Talbot distance (maximum distance).")
+        self.add_tooltip(G1PeriodLabel, "Period of the first grating (G1) in micrometers.")
+        self.add_tooltip(G1PhaseLabel, "Phase shift introduced by the first grating (G1).")
+        self.add_tooltip(MovableLabel, "Select which grating (G1 or G2) will be moved during the phase stepping simulation.")
+        self.add_tooltip(NumberStepsLabel, "Number of discrete steps in the phase stepping process.")
+        self.add_tooltip(StepLenghtLabel, "Length of each step in micrometers.")
+        self.add_tooltip(ObjectLabel, "Type of object to simulate: 'Sphere' or 'Cylinder'.")
+        self.add_tooltip(ImageOptionLabel, "Type of image to simulate: 'Ideal' (perfect detector) or 'Realistic' (with detector effects).")
+        self.add_tooltip(DetectorPXLabel, "Pixel size of the detector in micrometers.")
+        self.add_tooltip(DetectorResolutionLabel, "Detector resolution specified as pixel size in micrometers.")
+        self.add_tooltip(RunBtton, "Start the Talbot-Lau phase contrast simulation with the specified parameters.")
+        
+        def _auto_update_TL(*args):
+            self.modify_DOD()
+
+        for var in (
+            self.TL_DSO,
+            self.TL_TLmultiple,
+            self.TL_Period_G1,
+            self.TL_beam_energy,
+            self.TL_BeamShape,
+            self.TL_Beam_Spectrum,
+            self.TL_G1_Phase,
+        ):
+            try:
+                var.trace_add("write", _auto_update_TL)
+            except Exception:
+                pass
+
+        self.modify_DOD()
 
     def initialize_vars(self):
 
@@ -463,6 +554,11 @@ class PCSim_gui:
     def RunInline(self):
         
         def _run():
+            
+            if not self.verify_physical_values_inline():
+                self.set_status("Error in physical values for Inline simulation.")
+                return
+            
             self.set_status("Running inline simulation...")
             n = self.i_n.get()
             DSO = self.i_DSO.get()
@@ -539,6 +635,9 @@ class PCSim_gui:
     def RunCheckTL(self):
         def _run():
             #self.set_status("Running Talbot carpet simulation...")
+            if not self.verify_physical_values_checkTL():
+                self.set_status("Error in physical values for Talbot carpet simulation.")
+                return
             n = self.c_n.get()
             pixel_size = self.c_pixel_size.get() #um
             FWHM_source = self.c_FWHM_source.get()
@@ -589,6 +688,11 @@ class PCSim_gui:
 
     def RunTL(self):
         def _run():
+            
+            if not self.verify_physical_values_TL():
+                self.set_status("Error in physical values for Talbot-Lau simulation.")
+                return
+            
             #self.set_status("Running Talbot-Lau simulation...")
             n = self.TL_n.get()
             pixel_size = self.TL_pixel_size.get()
@@ -610,6 +714,7 @@ class PCSim_gui:
             xshift = self.TL_xshift.get()
             yshift = self.TL_yshift.get()
             image_option = self.TL_image_option.get()
+            DSO = DSG1-DOG1
             angle = 0
 
 
@@ -646,9 +751,22 @@ class PCSim_gui:
             distance, G2Period = geometry.calculate_Talbot_distance_and_G2period(MySource, configuration)
             geometry.DSD  = DSG1+distance
             configuration.G2_Period = G2Period
+            
+            if DSO -  distance <= 0:
+                # It should not happen in any case due to the calculation of distance, but just in case
+                self.TL_Talbot_distance.set(0.0)
+                self.TL_DOD.set(0.0)
+                self.TL_M.set(0.0)
+                self.TL_Period_G2.set(0.0)
+                self.set_status("Talbot configuration not physically valid for these parameters.")
+                return
 
             G1 = obj.Grating(n , Period_G1, 0.5, pixel_size, 'Si', DSG1, grating_type = G1_type, design_energy = design_energy)
             G2 = obj.Grating(n , G2Period, 0.5, pixel_size, 'Au', DSG1+distance, 40,grating_type = 'custom', design_energy = design_energy)
+            self.gui_check_grating_sampling(Period_G1 / pixel_size)
+            self.gui_check_grating_sampling(G2Period / pixel_size)
+            self.gui_check_phase_stepping(self.TL_steps.get(), G2Period / pixel_size,self.TL_step_length.get() / pixel_size)
+            
             progress_cb = self.make_progress_callback("TL simulation")
             i, ir = exp.Experiment_Phase_Stepping(n, MyDetector, MySource, geometry, Objects, G1, G2, configuration, padding = 0, progress_cb=progress_cb)
             
@@ -658,6 +776,7 @@ class PCSim_gui:
                 self.Plot_Figure(self.TL_results_frame, i[0,:,:], 1, 0, (3,3), 'One Projection', columnspan=2)
                 wg.create_button(self.TL_results_frame, 'Save Stack Object Images', 2,0, command=  lambda : self.save_stack_image(i))
                 wg.create_button(self.TL_results_frame, 'Save Stack Reference Images', 2,1, command=  lambda : self.save_stack_image(ir))
+                bt3 = wg.create_button(self.TL_results_frame, 'Send to TLRec', 3, 0,command=lambda: self.send_to_TLREC(i, ir))
             
                 if self.TL_zip_var.get():
                     self.export_TL_zip(i, ir)
@@ -676,19 +795,26 @@ class PCSim_gui:
             '''
         
         self.run_with_error_handling(_run, "Running Talbot-Lau simulation...")
+        
+        
         #self.set_status("Talbot-Lau simulation finished!")
         #DPC, Phase, At, Transmission, DF = DPC_Retrieval(ib, ibr, G2Period, DSO, distance,0,mean_energy)
 
-    def modify_DOD(self, event):
+    def modify_DOD(self, event=None):
+        #print('Hola')
         DSO = self.TL_DSO.get()
         Period_G1 = self.TL_Period_G1.get()
         Talbot_multiple = self.TL_TLmultiple.get()
-        FWHM_source = self.TL_FWHM_source
+        FWHM_source = self.TL_FWHM_source.get()
         Spectrum = os.path.splitext(self.TL_Beam_Spectrum.get())[0]
         energy = self.TL_beam_energy.get()
-        pixel_size = self.TL_pixel_size
+        pixel_size = self.TL_pixel_size.get()
         G1_Phase = self.TL_G1_Phase.get()
         Beam_Shape = self.TL_BeamShape.get()
+        
+        if Period_G1 <= 0 or energy <= 0 or DSO <= 0 or Talbot_multiple <= 0:
+            #print('Nope')
+            return
 
         if Spectrum == 'Monoenergetic':
             Spectrum = 'Mono'
@@ -705,11 +831,14 @@ class PCSim_gui:
                 distance = DSO*Talbot_multiple*distance_Talbot/(DSO-Talbot_multiple*distance_Talbot)
                 M = (DSO+distance)/DSO
                 G2Period =Period_G1*M/2 # pi
-            if G1_Phase == 'Phase pi/2':
+            elif G1_Phase == 'Phase pi/2':
                 distance_Talbot = Period_G1**2/(2*mean_wavelength)*10**(-4) #pi/2
                 distance = DSO*Talbot_multiple*distance_Talbot/(DSO-Talbot_multiple*distance_Talbot)
                 M = (DSO+distance)/DSO
                 G2Period =Period_G1*M # pi/2
+                
+            else:
+                return
 
         if Beam_Shape == 'Plane': 
             M =1
@@ -717,10 +846,14 @@ class PCSim_gui:
                 G2Period = Period_G1/2
                 distance = Period_G1**2/(8*mean_wavelength)*10**(-4)
                 distance_Talbot = distance
-            if G1_Phase == 'Phase pi/2':
+            elif G1_Phase == 'Phase pi/2':
                 G2Period = Period_G1
                 distance = Period_G1**2/(2*mean_wavelength)*10**(-4)
                 distance_Talbot = distance
+            else:
+                return
+        else:
+            return
 
         self.TL_Talbot_distance.set(distance_Talbot)
         self.TL_Period_G2.set(G2Period)
@@ -1403,3 +1536,191 @@ class PCSim_gui:
         
     def hide_loading_overlay_threadsafe(self):
         self.master.after(0, self.hide_loading_overlay)
+        
+    def send_to_TLREC(self, i_stack, ir_stack):
+        if not hasattr(self, "tlrec_gui"):
+            self.set_status("TLRec GUI is not available.")
+            return
+        
+        self.tab_container.select(self.TLRec_tab)
+        self.tlrec_gui.load_from_arrays(i_stack, ir_stack, label="Simulation")
+        
+    def gui_check_grating_sampling(self, period_px):
+        buf = io.StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = buf
+
+        pcsim_utils.check_grating_sampling(period_px)
+
+        sys.stdout = old_stdout
+        msg = buf.getvalue().strip()
+
+        if "WARNING" in msg:
+            messagebox.showwarning("Grating Sampling Warning", msg)
+
+    def gui_check_phase_stepping(self, steps, period_px, step_size_px):
+        buf = io.StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = buf
+
+        pcsim_utils.check_phase_stepping(steps, period_px, step_size_px)
+
+        sys.stdout = old_stdout
+        msg = buf.getvalue().strip()
+
+        if "WARNING" in msg:
+            messagebox.showwarning("Phase Stepping Warning", msg)
+            
+    def verify_physical_values_TL(self):
+        Period_G1 = self.TL_Period_G1.get()
+        Talbot_multiple = self.TL_TLmultiple.get()
+        FWHM_source = self.TL_FWHM_source.get()
+        energy = self.TL_beam_energy.get()
+        n = self.TL_n.get()
+        pixel_size = self.TL_pixel_size.get()
+        FWHM_source = self.TL_FWHM_source.get()
+        DSG1 = self.TL_DSO.get()
+        DOG1 = self.TL_DOG1.get()
+        object = self.TL_Object.get()
+        radius = self.TL_radius.get()
+        inner_radius = self.TL_inner_radius.get()
+        FWHM_detector = self.TL_resolution.get()
+        detector_pixel_size = self.TL_detector_pixel_size.get()
+        DSO = DSG1-DOG1
+        
+        
+        if Period_G1 <= 0 or energy <= 0  or Talbot_multiple <= 0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Period G1, Energy and Talbot Multiple are positive values.")
+            return False
+        
+        if FWHM_source <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Source FWHM is a positive value.")
+            return False
+        
+        if object == "Sphere":
+            if radius <= 0:
+                messagebox.showerror("Invalid Parameter", "Sphere radius must be > 0.")
+                return False
+
+        if object == "Cylinder":
+            if radius <= 0:
+                messagebox.showerror("Invalid Parameter", "Cylinder outer radius must be > 0.")
+                return False
+
+            if inner_radius < 0:
+                messagebox.showerror("Invalid Parameter", "Cylinder inner radius cannot be negative.")
+                return False
+
+            if inner_radius >= radius:
+                messagebox.showerror("Invalid Parameter", "Cylinder inner radius must be smaller than outer radius.")
+                return False
+        
+        if n <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Number of Pixels is a positive value.")
+            return False
+        
+        if detector_pixel_size <=0 or FWHM_detector <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Detector Pixel Size and Detector FWHM are positive values.")
+            return False
+        if DSO <=0 or DOG1 <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that DSO and DOG1 are positive values.")
+            return False
+        if pixel_size <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Pixel Size is a positive value.")
+            return False
+        
+        return True
+    
+    def verify_physical_values_inline(self):
+    
+        n = self.i_n.get()
+        DSO = self.i_DSO.get()
+        DOD = self.i_DOD.get()
+        pixel_size = self.i_pixel_size.get()
+        FWHM_source = self.i_FWHM_source.get()
+        Object = self.i_Object.get()
+        FWHM_detector = self.i_FWHM_detector.get()
+        detector_pixel_size = self.i_detector_pixel_size.get()
+        radius = self.i_radius.get()
+        inner_radius = self.i_inner_radius.get()
+        
+        if n <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Number of Pixels is a positive value.")
+            return False
+        if DSO <=0 or DOD <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that DSO and DOD are positive values.")
+            return False
+        if pixel_size <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Pixel Size is a positive value.")
+            return False
+        if FWHM_source <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Source FWHM is a positive value.")
+            return False
+        if detector_pixel_size <=0 or FWHM_detector <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Detector Pixel Size and Detector FWHM are positive values.")
+            return False
+        if Object == "Sphere":
+            if radius <= 0:
+                messagebox.showerror("Invalid Parameter", "Sphere radius must be > 0.")
+                return False
+
+        if Object == "Cylinder":
+            if radius <= 0:
+                messagebox.showerror("Invalid Parameter", "Cylinder outer radius must be > 0.")
+                return False
+
+            if inner_radius < 0:
+                messagebox.showerror("Invalid Parameter", "Cylinder inner radius cannot be negative.")
+                return False
+
+            if inner_radius >= radius:
+                messagebox.showerror("Invalid Parameter", "Cylinder inner radius must be smaller than outer radius.")
+                return False
+        return True
+    
+    def verify_physical_values_checkTL(self):
+        
+        n = self.c_n.get()
+        pixel_size = self.c_pixel_size.get() #um
+        FWHM_source = self.c_FWHM_source.get()
+        Energy = self.c_energy.get() #keV
+        Period = self.c_period.get() # um
+        DC = self.c_DC.get()
+        bar_height = self.c_bar_height.get()
+        multiples = self.c_multiple.get()
+        iterations = self.c_iterations.get()
+        grating_opt = self.c_grating_option.get()
+        
+        if n <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Number of Pixels is a positive value.")
+            return False
+        if pixel_size <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Pixel Size is a positive value.")
+            return False
+        if FWHM_source <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Source FWHM is a positive value.")
+            return False
+        if Energy <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Energy is a positive value.")
+            return False
+        if Period <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Grating Period is a positive value.")
+            return False
+        if DC <=0 or DC >1:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Duty Cycle is between 0 and 1.")
+            return False
+        if grating_opt == "Custom":
+            if bar_height <= 0:
+                messagebox.showerror("Invalid Parameter", "For a custom grating, bar height must be > 0 µm.")
+                return False
+        if multiples <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Talbot multiples is a positive value.")
+            return False
+        if iterations <=0:
+            messagebox.showerror("Invalid Parameters", "Please ensure that Number of calculations (iterations) is a positive value.")
+            return False
+        return True
+    
+    def add_tooltip(self, widget, text):
+        ToolTip(widget, text)
+    

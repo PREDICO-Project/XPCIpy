@@ -10,6 +10,7 @@ This document summarizes all approved updates, fixes, and improvements implement
 - Removed all `global root` patterns throughout the codebase for safety, clarity, and better separation of concerns.
 - Standardized constructors to receive `master` as parent container instead of creating or overwriting Tk roots.
 - Added a shared status bar (`ttk.Label` bound to `status_var`) to all GUIs for real-time feedback.
+- Added a thread-safe execution wrapper to avoid GUI freezing on long tasks.
 
 ---
 
@@ -87,29 +88,67 @@ Features:
 - Implemented a window with the error when it occurs.
 
 ---
+## 4. New Safety, Physics verification and Warnings
 
-## 4. Layout Fixes and Stability
+### 4.1 Physical Parameter Verification
+- Added full verification for Inline, CheckTL and TL simulations.
+- Prevents execution when parameters are non-physical (negative distances, invalid radius, wrong pixel size, etc.).
 
-### 4.1. Corrected White Zones During Tab Switching
+### 4.2 Grating Sampling Verification (through Warnings)
+- G1/G2 period not sampled by an even number of pixels.
+- Phase stepping does not cover a full period.
+- Total stepping not aligned with G2 period.
+
+### 4.3 Improved Talbot Distance Auto-Update
+- Fixed cases where distances were not recalculated when inputs changed.
+
+## 5. User Experience Enhancements
+
+### 5.1 Loading Overlay for Long Calculations
+- Added a semi-transparent fullscreen overlay showing:
+  - "Loading..."
+  - Optional progress percentage
+
+- Overlay automatically:
+  - blocks all user input
+  - stays visible after minimizing/restoring
+  - disappears smoothly after finishing
+
+### 5.2 Tooltips System
+- Added Tooltips to the widgets
+
+### 6. Help, License & Citation System
+
+### 6.1 Added Help Window
+- Includes a (brief for now) user-guide
+
+### 6.2 How to Cite Window
+- Includes the citation of the work
+
+### 6.3 License Window
+- Includes the License of the work
+
+## 7. Layout Fixes and Stability
+
+### 7.1. Corrected White Zones During Tab Switching
 - The scrollframe canvas now inherits the dark theme.
 
-### 4.2. Grid Configuration Standardization
+### 7.2. Grid Configuration Standardization
 - Normalized `grid_rowconfigure` and `grid_columnconfigure` across tabs to:
   - `weight=1`
 - Ensures all tabs expand uniformly to fill available space.
 
-### 4.3. Removed All Root Geometry Side Effects
+### 7.3. Removed All Root Geometry Side Effects
 - No more resizing or collapsing when creating/destroying subframes.
 - Notebook automatically fills the whole application area.
 
 ---
 
-## 5. Future Work (Planned)
+## 8. Future Work (Planned)
 These items were discussed but not approved (yet) for implementation:
 
 - History panel for reconstruction parameters  
 - GPU acceleration indicators
-- Tooltips for each parameter
 - Hover-preview on images
 - Plugin-style extension system
 - Generate an executable

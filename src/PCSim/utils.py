@@ -156,10 +156,11 @@ def check_grating_sampling(period_px):
 def check_phase_stepping(n_steps, period_px, step_size_px):
 
     total_shift = n_steps * step_size_px
-    if total_shift < period_px:
+    print(total_shift)
+    if total_shift < period_px * (1-1e-3):
         print(
-            f"WARNING: The number of ({n_steps}) does not cover a full period of the grating ({period_px:.2f} px)."
+            f"WARNING: The number of steps ({n_steps}) with step size ({step_size_px:.2} px) does not cover a full period of the grating ({period_px:.2f} px)."
         )
-    elif total_shift % period_px != 0:
+    elif np.isclose(total_shift % period_px, 0) is False:
         print(
             f"WARNING: The total number of steps ({total_shift:.2f} px) is not an exact multiple of the G2 period ({period_px:.2f} px). Errors in the reconstruction can appear.")

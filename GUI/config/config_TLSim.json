@@ -1,15 +1,15 @@
 {
-    "n": 1000, 
-    "pixel_size": 1, 
+    "n": 3000, 
+    "pixel_size": 0.1, 
     "DOD": 20,
     "DSG1": 16.69,
     "DOG1": 1,
     "TLmultiple": 1,
     "Beam_Shape": "Plane",
     "Beam_Spectrum": "Monoenergetic",
-    "energy": 25, 
+    "energy": 23, 
     "Object": "Sphere",
-    "radius": 200, 
+    "radius": 100, 
     "material": "H2O.txt",
     "xshift": 0, 
     "yshift": 0, 
@@ -20,8 +20,8 @@
     "G1_Phase": "Phase pi",
     "MovableGrating": "G2",
     "steps": 10,
-    "step_length": 1, 
-    "image_option": "Ideal",
-    "resolution": 20,
-    "detector_pixel_size": 10
+    "step_length": 0.3, 
+    "image_option": "Realistic",
+    "resolution": 6,
+    "detector_pixel_size": 1
 }
