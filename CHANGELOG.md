@@ -40,9 +40,12 @@ Features:
 ### 2.4. Interactive Modulation Curve
 - Clicking on the reconstructed phase image automatically updates the modulation curve.
 
-### 2.5. NaN Handling in Reconstruction
-- Added `np.nan_to_num`-based fast sanitization for DPC, Dark-Field, Absorption, Transmission.
+### 2.5. NaN Handling in Reconstruction and in the Uploaded Stacks
+- Added `np.nan_to_num`-based fast sanitization for DPC, Dark-Field, Absorption, Transmission, Reference Stack and Object Stack.
 - Prevented Wiener filter crashes due to NaNs in frequency domain.
+
+### 2.6 Added Drag and Drop widget
+- Added Drag and Drop widget to load Reference/Objects stacks.
 
 ---
 

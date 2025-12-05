@@ -2,7 +2,17 @@ from tkinter import ttk
 import tkinter as tk
 import os
 import platform
+from tkinter import filedialog, messagebox
 
+# For Drag and Drop functionality
+try:
+    from tkinterdnd2 import DND_FILES
+    _HAS_DND = True
+except Exception:
+    DND_FILES = None
+    _HAS_DND = False
+    
+    
 class Widget:
 
     @staticmethod
@@ -193,3 +203,121 @@ class ToggleButton(ttk.Button):
             self.config(style="ToggleOn.TButton")
         else:
             self.config(style="ToggleOff.TButton")
+            
+class DropZone(tk.Frame):
+    """
+    Generic drag & drop + browse area.
+    """
+    
+    def __init__(
+        self,
+        parent,
+        title="Files",
+        description="Drag & drop files here",
+        button_text="Browse files",
+        on_files_dropped=None,
+        extensions=None,
+        multiple=False,
+        filetypes=None,
+        enable_dnd=True,
+        status_text="No file loaded",
+        **kwargs
+    ):
+        super().__init__(parent, bg="#252525", bd=1, relief="solid", **kwargs)
+
+        self.on_files_dropped = on_files_dropped
+        self.extensions = [ext.lower() for ext in extensions] if extensions else None
+        self.multiple = multiple
+        self.filetypes = filetypes
+
+        self.columnconfigure(0, weight=1)
+
+        inner = tk.Frame(self, bg="#303030")
+        inner.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
+        inner.columnconfigure(0, weight=1)
+
+        #self.icon_lbl = tk.Label(inner, text=" ", bg="#303030", fg="#aaaaaa", font=("Segoe UI", 20, "bold"))
+        #self.icon_lbl.grid(row=0, column=0, pady=(6, 0))
+
+
+        self.title_lbl = tk.Label(inner, text=title, bg="#303030", fg="white", font=("Segoe UI", 10, "bold"))
+        self.title_lbl.grid(row=0, column=0, pady=(2, 0))
+
+        
+        self.desc_lbl = tk.Label(inner, text=description, bg="#303030", fg="#cccccc", font=("Segoe UI", 9))
+        self.desc_lbl.grid(row=1, column=0, pady=(2, 0))
+
+        # "or"
+        self.or_lbl = tk.Label(inner, text="or", bg="#303030", fg="#888888", font=("Segoe UI", 8, "italic"))
+        self.or_lbl.grid(row=2, column=0, pady=(0, 0))
+
+        # Browse button
+        self.browse_btn = ttk.Button(inner, text=button_text, command=self._on_browse_clicked)
+        self.browse_btn.grid(row=3, column=0, pady=(4, 8))
+        
+        # Filename loaded
+        self.status_lbl = tk.Label(inner, text=status_text, bg="#303030", fg="#999999", font=("Segoe UI", 8), wraplength=260)
+        self.status_lbl.grid(row=4, column=0, pady=(0, 4))
+
+   
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+
+        if enable_dnd and _HAS_DND:
+            try:
+                self.drop_target_register(DND_FILES)
+                self.dnd_bind("<<Drop>>", self._on_drop_event)
+            except Exception:
+                pass
+
+    def _on_enter(self, event):
+        self.configure(bg="#3a3a3a")
+
+    def _on_leave(self, event):
+        self.configure(bg="#252525")
+
+    def _on_browse_clicked(self):
+        """Open a file dialog and send selected paths to callback."""
+        if self.multiple:
+            paths = filedialog.askopenfilenames(filetypes=self.filetypes)
+        else:
+            path = filedialog.askopenfilename(filetypes=self.filetypes)
+            paths = [path] if path else []
+
+        if paths and self.on_files_dropped:
+            self.on_files_dropped(list(paths))
+
+    def _filter_by_extension(self, paths):
+        """Filter list of paths by allowed extensions, if any."""
+        if self.extensions is None:
+            return list(paths)
+        out = []
+        for p in paths:
+            ext = os.path.splitext(p)[1].lower()
+            if ext in self.extensions:
+                out.append(p)
+        return out
+
+    def _on_drop_event(self, event):
+        """Handle <<Drop>> event from tkinterdnd2."""
+        try:
+            raw = event.data
+            paths = self.tk.splitlist(raw)
+            paths = self._filter_by_extension(paths)
+            if not paths:
+                messagebox.showwarning("Invalid files", "The dropped files do not match the expected extensions.")
+                return
+            if self.on_files_dropped:
+                self.on_files_dropped(list(paths))
+        except Exception as e:
+            messagebox.showerror("Drop error", f"Could not process dropped files:\n{e}")
+    
+    def set_status_text(self, text):
+        """Update the status label text."""
+        if not text:
+            text = "No file loaded"
+        else:
+            text = f"Loaded: {text}"
+        self.status_lbl.config(text=text)
+        
+    

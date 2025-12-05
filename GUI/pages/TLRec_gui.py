@@ -19,6 +19,8 @@ from GUI.utils import resource_path
 #from GUI.config.default_conf import default_TLRec_conf
 import time
 import threading
+from tkinterdnd2 import DND_FILES, TkinterDnD
+from GUI.ui.widgets import DropZone
 
 
 
@@ -56,7 +58,8 @@ class ImageControlPanel:
             orient="horizontal",
             variable=self.center_var,
             command=lambda v: self.apply_window_level(),
-            style="Dark.Horizontal.TScale"
+            style="Dark.Horizontal.TScale",
+            length=110
         )
         self.center_scale.grid(row=row, column=2, sticky="ew", padx=5)
 
@@ -68,7 +71,8 @@ class ImageControlPanel:
             orient="horizontal",
             variable=self.width_var,
             command=lambda v: self.apply_window_level(),
-            style="Dark.Horizontal.TScale"
+            style="Dark.Horizontal.TScale",
+            length=110
         )
         self.width_scale.grid(row=row, column=4, sticky="ew", padx=5)
 
@@ -105,6 +109,9 @@ class TLRec_GUI:
         self.master = master
         self.status_var = status_var
         
+        self.ref_filename = None
+        self.obj_filename = None
+        
         # --- LOADING OVERLAY ---
         self.overlay = None
         self.overlay_label = None
@@ -115,7 +122,7 @@ class TLRec_GUI:
         
         self.generate_load_files_frame()
         self.generate_raw_images_frame()
-        self.generate_option_frame()
+        self.generate_coords_frame()
         self.generate_Modulation_Curve_frame()
         self.generate_PC_images_frame()
         self.initialize_variables()
@@ -156,31 +163,10 @@ class TLRec_GUI:
             self.status_var.set(text)
             self.master.update_idletasks()
 
-    def generate_option_frame(self):
-
-        OPTIONS = [
-        "Least Squares",
-        "Fast Least Squares",
-        "Step Correction",
-        "Fast FFT",
-        "FFT"
-        ]
-       
-        self.frame_recon = ttk.Frame(self.master,borderwidth=2, relief='groove')
-        self.frame_recon.grid(row = 3, column=0, columnspan=2)
+    def generate_coords_frame(self):
 
         self.frame_coords = ttk.Frame(self.master)
-        self.frame_coords.grid(row = 4, column=0, columnspan=2)
-
-        label = tk.Label(self.frame_recon, text = 'Reconstruction Parameters', width=30)
-        label.grid(row = 0, column = 0)
-        self.Algorithm_ComboBoxLabel, self.Algorithm_ComboBox = wg.create_label_combobox(self.frame_recon, label_text='Reconstruction Algorithm',row = 1,column =0, names = OPTIONS,state = 'disabled')
-        self.Algorithm_ComboBox.current(0)
-        
-        self.UploadButton = wg.create_button(self.frame_recon,'Confirm Algorithm', 2, 0, state = 'disabled', command= lambda:self.Upload(self.Algorithm_ComboBox))
-
-        self.RetrieveButton = wg.create_button(self.frame_recon,'Retrieve', 2, 1, state = 'disabled', command= lambda:self.Run(self.Algorithm_ComboBox))
-
+        self.frame_coords.grid(row = 5, column=0, columnspan=2)
 
         self.XLabel, self.X_position = wg.create_label_entry(self.frame_coords, 'x coordinate', 0, 0,padx = 20, state='disable')
         self.YLabel, self.Y_position = wg.create_label_entry(self.frame_coords, 'y coordinate', 1, 0,padx = 20, state='disable')
@@ -191,30 +177,68 @@ class TLRec_GUI:
     def generate_load_files_frame(self):
         main_frame = ttk.Frame(self.master, style='TFrame')
         main_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
-
-        button_reference = wg.create_button(main_frame, "Load Reference Images", 0, 0, command = self.UploadReference)
-        self.button_images = wg.create_button(main_frame, "Load Object Images", 1, 0, state = 'disable', command = self.UploadAction)
+                
+        self.ref_dropzone = DropZone(main_frame, title="REFERENCE stack", description="Drag & drop TIFF stack here",
+            button_text="Browse reference", extensions=[".tif", ".tiff"], filetypes=[("TIFF stack", "*.tif *.tiff")], multiple=False, 
+            on_files_dropped=self.on_drop_reference)
         
-        self.filenameEntry = wg.create_entry(main_frame,1,1)
-        self.filename_r_Entry = wg.create_entry(main_frame,0,1)
-
-        Modify_configButton = wg.create_button(main_frame, 'Modify Default Parameters', 2, 0, padx = 60, command = self.Open_config_params)
+        self.ref_dropzone.grid(row=0, column=0, columnspan=2, sticky="ew",padx=5, pady=(6, 4), ipady=2)
         
-        ExitButton = wg.create_button(main_frame, "Exit", 3, 0, padx = 60, command=self.master.quit)
+        self.obj_dropzone = DropZone(main_frame, title="OBJECT stack", description="Drag & drop TIFF stack here", button_text="Browse object",
+            extensions=[".tif", ".tiff"], filetypes=[("TIFF stack", "*.tif *.tiff")], multiple=False, on_files_dropped=self.on_drop_object)
+        
+        self.obj_dropzone.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5, pady=(6, 4), ipady=2)
+    
+    
+        OPTIONS = [
+        "Fast FFT",
+        "Least Squares",
+        "Fast Least Squares",
+        "Step Correction",
+        "FFT"
+        ]
+       
+        frame_recon = ttk.LabelFrame(main_frame,borderwidth=2, text= 'Reconstruction',relief='groove')
+        frame_recon.grid(row = 2, column=0, columnspan=2)
 
+        #self.frame_coords = ttk.Frame(self.master)
+        #self.frame_coords.grid(row = 4, column=0, columnspan=2)
 
+        label = tk.Label(frame_recon, text = 'Algorithm:', width=30)
+        label.grid(row = 0, column = 0, sticky='w', padx=5, pady=2)
+        self.Algorithm_ComboBoxLabel, self.Algorithm_ComboBox = wg.create_label_combobox(frame_recon, label_text='Reconstruction Algorithm',row = 1,column =0, names = OPTIONS,state = 'disabled')
+        self.Algorithm_ComboBox.current(0)
+        
+        self.Algorithm_ComboBox.bind("<<ComboboxSelected>>", self.selected_algorithm)
+        
+        #self.UploadButton = wg.create_button(frame_recon,'Confirm', 2, 0, state = 'disabled', command= lambda:self.Upload(self.Algorithm_ComboBox))
+
+        self.RetrieveButton = wg.create_button(frame_recon,'Retrieve', 2, 0, columnspan=2 ,state = 'disabled', command= lambda:self.Run(self.Algorithm_ComboBox))
+        
+        
+        Modify_configButton = wg.create_button(main_frame, 'Modify Default Parameters', 3, 0, padx = 60, command = self.Open_config_params)
+        
+        ExitButton = wg.create_button(main_frame, "Exit", 4, 0, padx = 60, command=self.master.quit)
+
+    # Not Used Now
     def UploadReference(self):
         self.set_status("Loading reference images...")
         filename = filedialog.askopenfilename()
-        self.filename_r_Entry.delete(0, tk.END)
-        self.filename_r_Entry.insert(0, os.path.basename(filename))
+        #self.filename_r_Entry.delete(0, tk.END)
+        #self.filename_r_Entry.insert(0, os.path.basename(filename))
         self.images_reference = tifffile.imread(filename)
 
         #self.images_reference = io.imread(filename)
-        self.button_images['state'] = 'normal'
+        if hasattr(self, "images"):
+            self.load_stacks(self.images, self.images_reference, obj_label=self.obj_filename or "Object", 
+                             ref_label=self.ref_filename or "Reference", status_text="Images loaded!")
+            
+        else:
         
-        self.set_status("Reference images loaded!")
-    
+            self.set_status("Reference images loaded. Now load object images.")
+            #self.button_images['state'] = 'normal'
+            
+    # Not Used Now  
     def UploadAction(self):
 
         self.set_status("Loading object images...")
@@ -223,12 +247,63 @@ class TLRec_GUI:
             self.set_status("Object image loading cancelled.")
             return
         
-        images = tifffile.imread(filename)
+        self.images = tifffile.imread(filename)
         obj_label = os.path.basename(filename)
-        ref_label = self.filename_r_Entry.get() or "Reference"
+        ref_label = self.ref_filename or "Reference"
         #self.images = io.imread(filename)
 
-        self.load_stacks(images, self.images_reference, obj_label=obj_label, ref_label=ref_label, status_text="Object images loaded!")
+
+        if hasattr(self, "images_reference"):
+            # If Reference image are loaded, proceed to load both stacks
+            self.load_stacks(self.images, self.images_reference, obj_label=obj_label, ref_label=ref_label, status_text="Images loaded!")
+        else:
+            self.set_status("Object images loaded, please load reference.")
+        
+    def on_drop_reference(self, paths):
+      
+        if not paths:
+            return
+        path = paths[0]
+
+        self.set_status("Loading reference images (drag & drop)...")
+        
+        #self.filename_r_Entry.delete(0, tk.END)
+        #self.filename_r_Entry.insert(0, os.path.basename(path))
+        
+        
+        self.ref_filename = os.path.basename(path)
+        self.ref_dropzone.set_status_text(self.ref_filename)
+        self.images_reference = tifffile.imread(path)
+
+        if hasattr(self, "images"):
+            self.load_stacks(self.images, self.images_reference, obj_label=self.obj_filename or "Object", 
+                                ref_label=self.ref_filename or "Reference", status_text="Images loaded!")
+        else:
+            self.set_status("Reference images loaded (drag & drop). Now load object images.")
+            #self.button_images['state'] = 'normal'
+
+    def on_drop_object(self, paths):
+
+        if not paths:
+            return
+        path = paths[0]
+
+        if not hasattr(self, "images_reference"):
+            messagebox.showwarning("Missing reference", "Please load or drop the reference stack before the object stack.")
+            return
+
+        self.set_status("Loading object images (drag & drop)...")
+        self.images = tifffile.imread(path)
+
+        self.obj_filename = os.path.basename(path)
+        self.obj_dropzone.set_status_text(self.obj_filename)
+    
+        if hasattr(self, "images_reference"):
+            # If Reference image are loaded, proceed to load both stacks
+            self.load_stacks(self.images, self.images_reference, obj_label=os.path.basename(path), 
+                                ref_label=self.ref_filename or "Reference", status_text="Images loaded!")
+        else:
+            self.set_status("Object images loaded (drag & drop), please load reference.")
         
     def load_from_arrays(self, images, images_reference, label="Simulation"):
         
@@ -242,11 +317,10 @@ class TLRec_GUI:
         self.images = np.asarray(images)
         self.images_reference = np.asarray(images_reference)
         
-        self.filenameEntry.delete(0, tk.END)
-        self.filenameEntry.insert(0, obj_label)
-
-        self.filename_r_Entry.delete(0, tk.END)
-        self.filename_r_Entry.insert(0, ref_label)
+        if hasattr(self, "ref_dropzone"):
+            self.ref_dropzone.set_status_text(ref_label)
+        if hasattr(self, "obj_dropzone"):
+            self.obj_dropzone.set_status_text(obj_label)
         
         self.update_canvas(self.canvas_object, self.images[0])
         self.update_canvas(self.canvas_reference, self.images_reference[0])
@@ -269,9 +343,10 @@ class TLRec_GUI:
             idx = max(0, min(z - 1, idx))
             ##self.Show_Image(images, int(j)-1, self.Frame_images)
             self.update_canvas(self.canvas_object, self.images[idx])
+            
         def Change_Ref_Images(val):
             idx = int(float(val)) - 1
-            idx = max(0, min(z - 1, idx))
+            idx = max(0, min(zr - 1, idx))
             self.update_canvas(self.canvas_reference, self.images_reference[idx])
             #self.Show_Image(images_reference, int(jr)-1, self.Frame_Ref_images)
         
@@ -283,10 +358,11 @@ class TLRec_GUI:
         
         self.Algorithm_ComboBoxLabel['state'] = 'normal'
         self.Algorithm_ComboBox['state'] = 'normal'
-        self.UploadButton['state'] = 'normal'
+        #self.UploadButton['state'] = 'normal'
         self.RetrieveButton['state'] = 'normal'
         
         self.set_status(status_text)
+        self.Upload(self.Algorithm_ComboBox)
 
     def Open_config_params(self):
 
@@ -353,7 +429,7 @@ class TLRec_GUI:
     def generate_Modulation_Curve_frame(self):
         
         self.SinesPlot = ttk.Frame(self.master, style='TFrame')
-        self.SinesPlot.grid(row=5, column = 0, columnspan=2)
+        self.SinesPlot.grid(row=4, column = 0, columnspan=2)
 
         self.initialize_Figure(self.SinesPlot, (3, 1), 1,0)
 
@@ -361,13 +437,24 @@ class TLRec_GUI:
 
     def generate_PC_images_frame(self):
         self.CanvasPlot = ttk.Frame(self.master, style='TFrame')
-        self.CanvasPlot.grid(row=0, column= 2, rowspan =6, columnspan = 3)
+        #self.CanvasPlot.grid(row=0, column= 2, rowspan =6, columnspan = 3)
+        self.CanvasPlot.grid(row=0, column=2, rowspan=6, sticky="nsew")
+        #self.CanvasPlot.grid_rowconfigure(0, weight=1)
+        #self.CanvasPlot.grid_columnconfigure(0, weight=1)
+        self.CanvasPlot.grid_columnconfigure(1, weight=0)
+        #self.CanvasPlot.grid_rowconfigure(2, weight=1)
         self.CanvasPlot.columnconfigure(2, weight=0) #For the Wiener Filter panel
+        
 
         self.initialize_Figure(self.CanvasPlot, (2, 2), 0,0)
         self.initialize_Figure(self.CanvasPlot, (2, 2), 0,1)
         self.initialize_Figure(self.CanvasPlot, (2, 2), 2,0)
         self.initialize_Figure(self.CanvasPlot, (2, 2), 2,1)
+        
+        self.frame_at_right = ttk.Frame(self.CanvasPlot, style='TFrame')
+        self.frame_at_right.grid(row=0, column=3, rowspan=3, sticky="n", padx=5, pady=5)
+        self.frame_at_right.grid_rowconfigure(0, weight=0)
+        self.frame_at_right.grid_rowconfigure(1, weight=1)
         #self.DPC_canvas = self.create_canvas(self.CanvasPlot, 0, 0, 200, 300)
         #self.Phase_canvas = self.create_canvas(self.CanvasPlot, 0, 1, 200, 300)
         #self.At_canvas = self.create_canvas(self.CanvasPlot, 2, 0, 200, 300)
@@ -384,12 +471,41 @@ class TLRec_GUI:
     
         width, height = canvas.winfo_width(), canvas.winfo_height()
         
+        arr = np.asarray(image, dtype=float)
+
+        finite = np.isfinite(arr)
+        if not finite.any():
+            arr = np.zeros_like(arr, dtype=float)
+            vmin, vmax = 0.0, 1.0
+        else:
+            vals = arr[finite]
+            p1, p99 = np.percentile(vals, [1, 99])
+            if p1 == p99:
+                vmin, vmax = vals.min(), vals.max()
+                if vmin == vmax:
+                    vmin, vmax = 0.0, 1.0
+            else:
+                vmin, vmax = p1, p99
+
+        arr_clipped = np.clip(arr, vmin, vmax)
+        norm = (arr_clipped - vmin) / (vmax - vmin + 1e-9)
+        norm = (norm * 255.0).astype(np.uint8)
+
+        image_pil = Image.fromarray(norm)
+        resized_image = image_pil.resize((width, height), Image.BILINEAR)
+        photo = ImageTk.PhotoImage(resized_image)
+
+        canvas.image = photo
+        canvas.delete("all")
+        canvas.create_image(0, 0, anchor=tk.NW, image=canvas.image)
+        
+        '''
         image_pil = Image.fromarray(np.uint8((image-np.min(image))/(np.max(image)-np.min(image))*255))
         resized_image = image_pil.resize((width, height))
         photo = ImageTk.PhotoImage(resized_image)
         
         canvas.image = photo  
-        canvas.create_image(0, 0, anchor = tk.NW, image=canvas.image)
+        canvas.create_image(0, 0, anchor = tk.NW, image=canvas.image)'''
         
     def on_pc_image_motion(self, event):
         '''Coords and Values display in the status bar when mouse is over the PC images.'''
@@ -480,7 +596,7 @@ class TLRec_GUI:
         fig.set_facecolor("#333333")
 
         canvas.draw()
-        canvas.get_tk_widget().grid(row=row, column=column, ipadx=60, ipady=50,pady=10)
+        canvas.get_tk_widget().grid(row=row, column=column, padx=5, pady=0, sticky="nsew")
 
     def Plot_Figure(self, frame, image, row, column, figsize, title, store_attr=None):
         plt.close()
@@ -501,7 +617,7 @@ class TLRec_GUI:
         #plt.show()
         canvas1 = FigureCanvasTkAgg(fig, master=frame)
         canvas1.draw()
-        canvas1.get_tk_widget().grid(row=row, column=column, ipadx=90, ipady=20)
+        canvas1.get_tk_widget().grid(row=row, column=column,padx=5, pady=0, sticky="nsew")
         toolbarFrame1 = tk.Frame(master=frame)
         toolbarFrame1.grid(row=row+1,column=column)
         
@@ -551,16 +667,9 @@ class TLRec_GUI:
         if hasattr(self, "phase_wiener_frame"):
             self.phase_wiener_frame.destroy()
 
-        self.phase_wiener_frame = ttk.LabelFrame(
-            self.CanvasPlot,
-            text="Wiener Filter",
-            style="Custom.TLabelframe",
-            padding=(4, 4))
+        self.phase_wiener_frame = ttk.LabelFrame(self.frame_at_right, text="Wiener Filter", style="Custom.TLabelframe", padding=(4, 4))
 
-        self.phase_wiener_frame.grid(
-            row=0, column=2,
-            sticky="n",
-            padx=5, pady=3)
+        self.phase_wiener_frame.grid(row=0, column=0, sticky="n", padx=5, pady=(3,3))
 
         # v0
         ttk.Label(self.phase_wiener_frame, text="v0:", style="TLabel").grid(
@@ -664,35 +773,35 @@ class TLRec_GUI:
                     if hasattr(self, "wl_master_frame"):
                         self.wl_master_frame.destroy()
 
-                    self.wl_master_frame = ttk.Frame(self.CanvasPlot)
-                    self.wl_master_frame.grid(row=4, column=0, columnspan=3, sticky="ew", pady=10)
+                    self.wl_master_frame = ttk.LabelFrame(self.frame_at_right, text='Window/Level Controls', padding=(4,4))
+                    self.wl_master_frame.grid(row=1, column=0, sticky="n", padx=5, pady=(0,5))
                     
                     self.image_controls = {}
 
                     self.image_controls["dpc"] = ImageControlPanel(
                         parent_frame=self.wl_master_frame,
-                        title="Phase Gradient",
+                        title="DPC",
                         image_array=Diff_Phase,
                         im_handle=self.im_dpc,
                         row=0)
 
                     self.image_controls["phase"] = ImageControlPanel(
                         parent_frame=self.wl_master_frame,
-                        title="Integrated Phase",
+                        title="I.P.",
                         image_array=Phase,
                         im_handle=self.im_phase,
                         row=1)
 
                     self.image_controls["tr"] = ImageControlPanel(
                         parent_frame=self.wl_master_frame,
-                        title="Transmission",
+                        title="Tr",
                         image_array=transmission,
                         im_handle=self.im_tr,
                         row=2)
 
                     self.image_controls["df"] = ImageControlPanel(
                         parent_frame=self.wl_master_frame,
-                        title="Dark Field",
+                        title="DF",
                         image_array=Dark_Field,
                         im_handle=self.im_df,
                         row=3)
@@ -870,6 +979,17 @@ class TLRec_GUI:
         
     def hide_overlay_threadsafe(self):
         self.master.after(0, self.hide_loading_overlay)
+        
+    def _on_dd_hover(self, widget, inside: bool):
+        if inside:
+            widget.configure(bg="#3d3d3d", bd=3)
+        else:
+            widget.configure(bg="#303030", bd=2)
+            
+    def selected_algorithm(self, event):
+        selected = self.Algorithm_ComboBox.get()
+        self.Upload(self.Algorithm_ComboBox)
+        self.set_status(f"Selected reconstruction algorithm: {selected}")
             
 if __name__ == "__main__":
     TLRec_GUI()
