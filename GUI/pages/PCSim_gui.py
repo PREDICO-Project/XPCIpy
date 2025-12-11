@@ -35,6 +35,7 @@ from src.PCSim import utils as pcsim_utils
 from GUI.ui.tooltips import ToolTip
 from GUI.pages.help_window import HelpWindow
 from GUI.pages.info_windows import LicenseWindow, CiteWindow
+from GUI.pages.TLRec_batch_gui import TLRecBatchGUI
 
 class PCSim_gui:
 
@@ -130,17 +131,20 @@ class PCSim_gui:
         self.inline_tab = ttk.Frame(self.tab_container, style="TFrame")
         self.check_TL_tab = ttk.Frame(self.tab_container, style="TFrame")
         self.TL_tab = ttk.Frame(self.tab_container, style="TFrame")
+        self.TL_batch_tab = ttk.Frame(self.tab_container, style="TFrame")
 
         # Add tabs to the tabs container
         self.tab_container.add(self.TLRec_tab, text = 'TLRec')
         self.tab_container.add(self.inline_tab, text="Inline Simulation")
         self.tab_container.add(self.check_TL_tab, text="Check Talbot-Lau effect")
         self.tab_container.add(self.TL_tab, text="Talbot Lau Phase Contrast Simulation")
+        self.tab_container.add(self.TL_batch_tab, text="TLRec batch (in develop)")
 
         self.populate_TLRec_tab()
         self.populate_inline_tab()
         self.populate_checkTL_tab()
         self.populate_TL_tab()
+        self.populate_TLRec_batch_tab()
         
     def populate_TLRec_tab(self):
         scrollframe = vsf(self.TLRec_tab)
@@ -155,6 +159,14 @@ class PCSim_gui:
         self.tlrec_gui = TLRec_GUI(container, status_var=self.status_var)
         #TLRec_GUI(self.TLRec_tab)
 
+    def populate_TLRec_batch_tab(self):
+        scrollframe = vsf(self.TL_batch_tab)
+        scrollframe.grid(row=0, column=0, sticky="nsew")
+        container = scrollframe.interior
+        self.TL_batch_tab.grid_rowconfigure(0, weight=1)
+        self.TL_batch_tab.grid_columnconfigure(0, weight=1)
+        self.tlrec_batch_gui = TLRecBatchGUI(container)
+        
     def populate_inline_tab(self):
         
         scrollframe = vsf(self.inline_tab)
