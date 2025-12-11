@@ -1,0 +1,995 @@
+import tkinter as tk
+from GUI.ui.styles import Styles as stl
+from GUI.ui.widgets import Widget as wg
+from tkinter import ttk, filedialog, messagebox
+from tkinter.filedialog import asksaveasfilename
+import os
+#from skimage import io
+import tifffile
+from PIL import Image, ImageTk
+import matplotlib.pyplot as plt
+import numpy as np
+import src.TLRec.Image_Display as Image_Display 
+from src.TLRec.Experimental_Retrieval import Modulation_Curve_Reconstruction
+from src.TLRec.utils import Apply_Phase_Wiener_filter
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg)
+from matplotlib.figure import Figure
+import json
+from GUI.utils import resource_path
+#from GUI.config.default_conf import default_TLRec_conf
+import time
+import threading
+from tkinterdnd2 import DND_FILES, TkinterDnD
+from GUI.ui.widgets import DropZone
+
+
+
+class ImageControlPanel:
+    """
+    Image Control Panel, you can modify the level and window of the visualization.
+    """
+    def __init__(self, parent_frame, title, image_array, im_handle, row):
+
+        self.image_array = image_array
+        self.im_handle = im_handle
+
+        p1, p99 = np.percentile(image_array[np.isfinite(image_array)], [1, 99])
+
+        if not np.isfinite(p1) or not np.isfinite(p99) or p1 == p99:
+            p1, p99 = 0, 1
+
+        low, high = p1, p99
+        self.default_low = low
+        self.default_high = high
+
+        center = (low + high) / 2
+        width = max(high - low, 1e-6)
+
+        self.center_var = tk.DoubleVar(value=center)
+        self.width_var = tk.DoubleVar(value=width)
+
+        ttk.Label(parent_frame, text=title, font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=2)
+
+        ttk.Label(parent_frame, text="Center").grid(row=row, column=1, sticky="e")
+        self.center_scale = ttk.Scale(
+            parent_frame,
+            from_=low - width,
+            to=high + width,
+            orient="horizontal",
+            variable=self.center_var,
+            command=lambda v: self.apply_window_level(),
+            style="Dark.Horizontal.TScale",
+            length=110
+        )
+        self.center_scale.grid(row=row, column=2, sticky="ew", padx=5)
+
+        ttk.Label(parent_frame, text="Width").grid(row=row, column=3, sticky="e")
+        self.width_scale = ttk.Scale(
+            parent_frame,
+            from_=width/20,
+            to=width*2,
+            orient="horizontal",
+            variable=self.width_var,
+            command=lambda v: self.apply_window_level(),
+            style="Dark.Horizontal.TScale",
+            length=110
+        )
+        self.width_scale.grid(row=row, column=4, sticky="ew", padx=5)
+
+        auto_btn = ttk.Button(parent_frame, text="Auto", command=self.auto_window_level)
+        auto_btn.grid(row=row, column=5, padx=5)
+        
+        parent_frame.columnconfigure(2, weight=1)
+        parent_frame.columnconfigure(4, weight=1)
+
+        self.apply_window_level()
+
+    def apply_window_level(self):
+        center = self.center_var.get()
+        width = max(self.width_var.get(), 1e-9)
+        vmin = center - width/2
+        vmax = center + width/2
+
+        self.im_handle.set_clim(vmin, vmax)
+        self.im_handle.axes.figure.canvas.draw_idle()
+
+    def auto_window_level(self):
+        low, high = self.default_low, self.default_high
+        center = 0.5*(low + high)
+        width = high - low
+
+        self.center_var.set(center)
+        self.width_var.set(width)
+        self.apply_window_level()
+
+class TLRec_GUI:
+
+    def __init__(self, master, status_var=None):
+
+        self.master = master
+        self.status_var = status_var
+        
+        self.ref_filename = None
+        self.obj_filename = None
+        
+        # --- LOADING OVERLAY ---
+        self.overlay = None
+        self.overlay_label = None
+        
+        self.click_markers = {}
+        
+        stl.configure_style()
+        
+        self.generate_load_files_frame()
+        self.generate_raw_images_frame()
+        self.generate_coords_frame()
+        self.generate_Modulation_Curve_frame()
+        self.generate_PC_images_frame()
+        self.initialize_variables()
+
+    def initialize_variables(self):
+        
+        self.G1Period_default= tk.DoubleVar()
+        self.G2Period_default= tk.DoubleVar()
+        self.Energy_Default= tk.DoubleVar()
+        self.DSG1_Default= tk.DoubleVar()
+        self.DOG1_Default = tk.DoubleVar()
+        self.DG1G2_Default= tk.DoubleVar()
+        self.pixel_size= tk.DoubleVar()
+        self.v0 = tk.DoubleVar()
+        self.n = tk.IntVar()
+        self.s = tk.DoubleVar()
+        
+        #config_path  = os.path.join(os.path.dirname(__file__), "config") # OLD
+        config_path = resource_path(os.path.join("GUI/config/config_TLRec.json"))
+        with open(config_path) as json_path:
+            #default_TLRec_conf = json.load(os.path.join(config_path, 'config_inline.json'))
+
+            default_TLRec_conf = json.load(json_path)
+            self.G1Period_default.set(default_TLRec_conf["G1Period"])  #micrometer
+            self.G2Period_default.set(default_TLRec_conf['G2Period'])  #micrometer
+            self.Energy_Default.set(default_TLRec_conf['Design_Energy'])#keV
+            self.DSG1_Default.set(default_TLRec_conf['DSG1']) #Distance source-G1 in cm
+            self.DOG1_Default.set(default_TLRec_conf['DOG1']) #Distance Object-G1 in cm
+            self.DG1G2_Default.set(default_TLRec_conf['DG1G2']) #Distance G1-G2 in cm.
+            self.pixel_size.set(default_TLRec_conf['Detetor_pixel_size'])
+            self.v0.set(default_TLRec_conf['v0'])
+            self.n.set(default_TLRec_conf['m'])
+            self.s.set(default_TLRec_conf['s'])
+        
+    def set_status(self, text):
+        """Update status bar."""
+        if self.status_var is not None:
+            self.status_var.set(text)
+            self.master.update_idletasks()
+
+    def generate_coords_frame(self):
+
+        self.frame_coords = ttk.Frame(self.master)
+        self.frame_coords.grid(row = 5, column=0, columnspan=2)
+
+        self.XLabel, self.X_position = wg.create_label_entry(self.frame_coords, 'x coordinate', 0, 0,padx = 20, state='disable')
+        self.YLabel, self.Y_position = wg.create_label_entry(self.frame_coords, 'y coordinate', 1, 0,padx = 20, state='disable')
+        
+        self.CompareButton = wg.create_button(self.frame_coords, 'Update Modulation Curve', 2, 0, padx = 60, state = 'disable',command = lambda: self.Compare_Fit(self.images, self.images_reference, 
+        int(self.X_position.get()),int(self.Y_position.get()), rec_type=self.Algorithm_ComboBox))
+
+    def generate_load_files_frame(self):
+        main_frame = ttk.Frame(self.master, style='TFrame')
+        main_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
+                
+        self.ref_dropzone = DropZone(main_frame, title="REFERENCE stack", description="Drag & drop TIFF stack here",
+            button_text="Browse reference", extensions=[".tif", ".tiff"], filetypes=[("TIFF stack", "*.tif *.tiff")], multiple=False, 
+            on_files_dropped=self.on_drop_reference)
+        
+        self.ref_dropzone.grid(row=0, column=0, columnspan=2, sticky="ew",padx=5, pady=(6, 4), ipady=2)
+        
+        self.obj_dropzone = DropZone(main_frame, title="OBJECT stack", description="Drag & drop TIFF stack here", button_text="Browse object",
+            extensions=[".tif", ".tiff"], filetypes=[("TIFF stack", "*.tif *.tiff")], multiple=False, on_files_dropped=self.on_drop_object)
+        
+        self.obj_dropzone.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5, pady=(6, 4), ipady=2)
+    
+    
+        OPTIONS = [
+        "Fast FFT",
+        "Least Squares",
+        "Fast Least Squares",
+        "Step Correction",
+        "FFT"
+        ]
+       
+        frame_recon = ttk.LabelFrame(main_frame,borderwidth=2, text= 'Reconstruction',relief='groove')
+        frame_recon.grid(row = 2, column=0, columnspan=2)
+
+        #self.frame_coords = ttk.Frame(self.master)
+        #self.frame_coords.grid(row = 4, column=0, columnspan=2)
+
+        label = tk.Label(frame_recon, text = 'Algorithm:', width=30)
+        label.grid(row = 0, column = 0, sticky='w', padx=5, pady=2)
+        self.Algorithm_ComboBoxLabel, self.Algorithm_ComboBox = wg.create_label_combobox(frame_recon, label_text='Reconstruction Algorithm',row = 1,column =0, names = OPTIONS,state = 'disabled')
+        self.Algorithm_ComboBox.current(0)
+        
+        self.Algorithm_ComboBox.bind("<<ComboboxSelected>>", self.selected_algorithm)
+        
+        #self.UploadButton = wg.create_button(frame_recon,'Confirm', 2, 0, state = 'disabled', command= lambda:self.Upload(self.Algorithm_ComboBox))
+
+        self.RetrieveButton = wg.create_button(frame_recon,'Retrieve', 2, 0, columnspan=2 ,state = 'disabled', command= lambda:self.Run(self.Algorithm_ComboBox))
+        
+        
+        Modify_configButton = wg.create_button(main_frame, 'Modify Default Parameters', 3, 0, padx = 60, command = self.Open_config_params)
+        
+        ExitButton = wg.create_button(main_frame, "Exit", 4, 0, padx = 60, command=self.master.quit)
+
+    # Not Used Now
+    def UploadReference(self):
+        self.set_status("Loading reference images...")
+        filename = filedialog.askopenfilename()
+        #self.filename_r_Entry.delete(0, tk.END)
+        #self.filename_r_Entry.insert(0, os.path.basename(filename))
+        self.images_reference = tifffile.imread(filename)
+
+        #self.images_reference = io.imread(filename)
+        if hasattr(self, "images"):
+            self.load_stacks(self.images, self.images_reference, obj_label=self.obj_filename or "Object", 
+                             ref_label=self.ref_filename or "Reference", status_text="Images loaded!")
+            
+        else:
+        
+            self.set_status("Reference images loaded. Now load object images.")
+            #self.button_images['state'] = 'normal'
+            
+    # Not Used Now  
+    def UploadAction(self):
+
+        self.set_status("Loading object images...")
+        filename = filedialog.askopenfilename()
+        if not filename:
+            self.set_status("Object image loading cancelled.")
+            return
+        
+        self.images = tifffile.imread(filename)
+        obj_label = os.path.basename(filename)
+        ref_label = self.ref_filename or "Reference"
+        #self.images = io.imread(filename)
+
+
+        if hasattr(self, "images_reference"):
+            # If Reference image are loaded, proceed to load both stacks
+            self.load_stacks(self.images, self.images_reference, obj_label=obj_label, ref_label=ref_label, status_text="Images loaded!")
+        else:
+            self.set_status("Object images loaded, please load reference.")
+        
+    def on_drop_reference(self, paths):
+      
+        if not paths:
+            return
+        path = paths[0]
+
+        self.set_status("Loading reference images (drag & drop)...")
+        
+        #self.filename_r_Entry.delete(0, tk.END)
+        #self.filename_r_Entry.insert(0, os.path.basename(path))
+        
+        
+        self.ref_filename = os.path.basename(path)
+        self.ref_dropzone.set_status_text(self.ref_filename)
+        self.images_reference = tifffile.imread(path)
+
+        if hasattr(self, "images"):
+            self.load_stacks(self.images, self.images_reference, obj_label=self.obj_filename or "Object", 
+                                ref_label=self.ref_filename or "Reference", status_text="Images loaded!")
+        else:
+            self.set_status("Reference images loaded (drag & drop). Now load object images.")
+            #self.button_images['state'] = 'normal'
+
+    def on_drop_object(self, paths):
+
+        if not paths:
+            return
+        path = paths[0]
+
+        if not hasattr(self, "images_reference"):
+            messagebox.showwarning("Missing reference", "Please load or drop the reference stack before the object stack.")
+            return
+
+        self.set_status("Loading object images (drag & drop)...")
+        self.images = tifffile.imread(path)
+
+        self.obj_filename = os.path.basename(path)
+        self.obj_dropzone.set_status_text(self.obj_filename)
+    
+        if hasattr(self, "images_reference"):
+            # If Reference image are loaded, proceed to load both stacks
+            self.load_stacks(self.images, self.images_reference, obj_label=os.path.basename(path), 
+                                ref_label=self.ref_filename or "Reference", status_text="Images loaded!")
+        else:
+            self.set_status("Object images loaded (drag & drop), please load reference.")
+        
+    def load_from_arrays(self, images, images_reference, label="Simulation"):
+        
+        obj_label = f"{label}_object (memory)"
+        ref_label = f"{label}_reference (memory)"
+
+        self.load_stacks(images, images_reference, obj_label=obj_label, ref_label=ref_label, status_text="Simulation images loaded into TLRec.")  
+        
+    def load_stacks(self, images, images_reference, obj_label="Object", ref_label="Reference", status_text="Images loaded!"):
+        
+        self.images = np.asarray(images)
+        self.images_reference = np.asarray(images_reference)
+        
+        if hasattr(self, "ref_dropzone"):
+            self.ref_dropzone.set_status_text(ref_label)
+        if hasattr(self, "obj_dropzone"):
+            self.obj_dropzone.set_status_text(obj_label)
+        
+        self.update_canvas(self.canvas_object, self.images[0])
+        self.update_canvas(self.canvas_reference, self.images_reference[0])
+        
+        (z,y,x) = self.images.shape
+        (zr,yr,xr) = self.images_reference.shape
+        
+        for child in self.Frame_images.winfo_children():
+            if isinstance(child, tk.Scale):
+                child.destroy()
+        for child in self.Frame_Ref_images.winfo_children():
+            if isinstance(child, tk.Scale):
+                child.destroy()
+        
+        j = tk.IntVar(value=1)
+        jr = tk.IntVar(value=1)
+        
+        def Change_Images(val):
+            idx = int(float(val)) - 1
+            idx = max(0, min(z - 1, idx))
+            ##self.Show_Image(images, int(j)-1, self.Frame_images)
+            self.update_canvas(self.canvas_object, self.images[idx])
+            
+        def Change_Ref_Images(val):
+            idx = int(float(val)) - 1
+            idx = max(0, min(zr - 1, idx))
+            self.update_canvas(self.canvas_reference, self.images_reference[idx])
+            #self.Show_Image(images_reference, int(jr)-1, self.Frame_Ref_images)
+        
+        slider1 = tk.Scale(self.Frame_images, from_=1, to=z, resolution = 1, orient='horizontal', variable= j,command = Change_Images, bg = 'gray20', fg='white', troughcolor='white', highlightthickness=0) 
+        slider1.grid(row=1, column=0)
+    
+        slider2 = tk.Scale(self.Frame_Ref_images, from_=1, to=zr, resolution = 1, orient='horizontal', variable= jr,command =  Change_Ref_Images, bg = 'gray20', fg='white', troughcolor='white', highlightthickness=0) 
+        slider2.grid(row=1, column=0)
+        
+        self.Algorithm_ComboBoxLabel['state'] = 'normal'
+        self.Algorithm_ComboBox['state'] = 'normal'
+        #self.UploadButton['state'] = 'normal'
+        self.RetrieveButton['state'] = 'normal'
+        
+        self.set_status(status_text)
+        self.Upload(self.Algorithm_ComboBox)
+
+    def Open_config_params(self):
+
+        global params_window
+        params_window = tk.Toplevel()
+        params_window.title("Default Parameters")
+
+        paramsFrame = ttk.Frame(params_window)
+        paramsFrame.grid(row=0, column=0, sticky="ns")
+        
+        
+        wg.create_label_entry(paramsFrame, "G1 Period (micrometer):", 0, 0,textvariable=self.G1Period_default)
+        wg.create_label_entry(paramsFrame, "G2 Period (micrometer):", 1, 0,textvariable=self.G2Period_default)
+
+        wg.create_label_entry(paramsFrame, "Design Energy (keV):", 2, 0,textvariable=self.Energy_Default)
+
+        wg.create_label_entry(paramsFrame, "Distance Source-G1 (cm):", 3, 0,textvariable=self.DSG1_Default)
+        wg.create_label_entry(paramsFrame, "Distance Object-G1 (cm):", 4, 0,textvariable=self.DOG1_Default)
+        wg.create_label_entry(paramsFrame, "Distance G1-G2 (cm):", 5, 0,textvariable=self.DG1G2_Default)
+        wg.create_label_entry(paramsFrame, "Detector pixel size (micrometer):", 6, 0,textvariable=self.pixel_size)
+        wg.create_label_entry(paramsFrame, "Frequency cut-off (Wiener filter):", 7, 0,textvariable=self.v0)
+        wg.create_label_entry(paramsFrame, "Butterworth's filter n-order (int):", 8, 0,textvariable=self.n)
+        wg.create_label_entry(paramsFrame, "Butterworth's filter signal:", 9, 0,textvariable=self.s)
+
+        wg.create_button(paramsFrame, 'Save/Modify',10,0, command =self.apply_changes_json )
+
+    def apply_changes_json(self):
+        #config_path  = os.path.join(os.path.dirname(__file__), "config") # OLD
+        config_path = resource_path(os.path.join("GUI/config/config_TLRec.json"))
+        with open(config_path, 'r') as json_path:
+            default_TLRec_conf = json.load(json_path)
+            default_TLRec_conf["G1Period"] = self.G1Period_default.get()
+            default_TLRec_conf['G2Period'] = self.G2Period_default.get() #micrometer
+            default_TLRec_conf['Design_Energy'] = self.Energy_Default.get()#keV
+            default_TLRec_conf['DSG1']=self.DSG1_Default.get() #Distance source-G1 in cm
+            default_TLRec_conf['DOG1']=self.DOG1_Default.get() #Distance Object-G1 in cm
+            default_TLRec_conf['DG1G2'] = self.DG1G2_Default.get() #Distance G1-G2 in cm.
+            default_TLRec_conf['Detetor_pixel_size'] =self.pixel_size.get()
+            default_TLRec_conf['v0'] =self.v0.get()
+            default_TLRec_conf['m'] = self.n.get()
+            default_TLRec_conf['s'] = self.s.get()
+
+        with open(config_path, "w") as jsonFile:
+            json.dump(default_TLRec_conf, jsonFile)
+        
+        params_window.destroy()
+       
+
+    def generate_raw_images_frame(self):
+        """
+        Generate the Frames where the object and reference images will be shown
+        """
+        self.Frame_Ref_images = ttk.Frame(self.master, style='TFrame')
+        self.Frame_Ref_images.grid(row=1, column=0)
+
+        self.Frame_images = ttk.Frame(self.master, style='TFrame')
+        self.Frame_images.grid(row=1, column=1)
+
+        # Initialize the canvas
+        self.canvas_object = self.create_canvas(self.Frame_images, 0 ,0, width = 175, height = 200)
+        self.canvas_reference = self.create_canvas(self.Frame_Ref_images, 0 ,0, width = 175, height = 200)
+        
+
+    def generate_Modulation_Curve_frame(self):
+        
+        self.SinesPlot = ttk.Frame(self.master, style='TFrame')
+        self.SinesPlot.grid(row=4, column = 0, columnspan=2)
+
+        self.initialize_Figure(self.SinesPlot, (3, 1), 1,0)
+
+        #self.Modulation_curve_canvas = self.create_canvas(self.SinesPlot, 0, 0, width=500, height=400) 
+
+    def generate_PC_images_frame(self):
+        self.CanvasPlot = ttk.Frame(self.master, style='TFrame')
+        #self.CanvasPlot.grid(row=0, column= 2, rowspan =6, columnspan = 3)
+        self.CanvasPlot.grid(row=0, column=2, rowspan=6, sticky="nsew")
+        #self.CanvasPlot.grid_rowconfigure(0, weight=1)
+        #self.CanvasPlot.grid_columnconfigure(0, weight=1)
+        self.CanvasPlot.grid_columnconfigure(1, weight=0)
+        #self.CanvasPlot.grid_rowconfigure(2, weight=1)
+        self.CanvasPlot.columnconfigure(2, weight=0) #For the Wiener Filter panel
+        
+
+        self.initialize_Figure(self.CanvasPlot, (2, 2), 0,0)
+        self.initialize_Figure(self.CanvasPlot, (2, 2), 0,1)
+        self.initialize_Figure(self.CanvasPlot, (2, 2), 2,0)
+        self.initialize_Figure(self.CanvasPlot, (2, 2), 2,1)
+        
+        self.frame_at_right = ttk.Frame(self.CanvasPlot, style='TFrame')
+        self.frame_at_right.grid(row=0, column=3, rowspan=3, sticky="n", padx=5, pady=5)
+        self.frame_at_right.grid_rowconfigure(0, weight=0)
+        self.frame_at_right.grid_rowconfigure(1, weight=1)
+        #self.DPC_canvas = self.create_canvas(self.CanvasPlot, 0, 0, 200, 300)
+        #self.Phase_canvas = self.create_canvas(self.CanvasPlot, 0, 1, 200, 300)
+        #self.At_canvas = self.create_canvas(self.CanvasPlot, 2, 0, 200, 300)
+        #self.DF_canvas = self.create_canvas(self.CanvasPlot, 2, 1, 200, 300)
+
+    def create_canvas(self, frame, row, column, width, height):
+        canvas = tk.Canvas(frame,width= width, height= height, bg='gray20', highlightthickness=0)
+        canvas.grid(row=row, column=column, sticky="nsew")
+        frame.grid_rowconfigure(1, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+        return canvas
+    
+    def update_canvas(self, canvas, image):
+    
+        width, height = canvas.winfo_width(), canvas.winfo_height()
+        
+        arr = np.asarray(image, dtype=float)
+
+        finite = np.isfinite(arr)
+        if not finite.any():
+            arr = np.zeros_like(arr, dtype=float)
+            vmin, vmax = 0.0, 1.0
+        else:
+            vals = arr[finite]
+            p1, p99 = np.percentile(vals, [1, 99])
+            if p1 == p99:
+                vmin, vmax = vals.min(), vals.max()
+                if vmin == vmax:
+                    vmin, vmax = 0.0, 1.0
+            else:
+                vmin, vmax = p1, p99
+
+        arr_clipped = np.clip(arr, vmin, vmax)
+        norm = (arr_clipped - vmin) / (vmax - vmin + 1e-9)
+        norm = (norm * 255.0).astype(np.uint8)
+
+        image_pil = Image.fromarray(norm)
+        resized_image = image_pil.resize((width, height), Image.BILINEAR)
+        photo = ImageTk.PhotoImage(resized_image)
+
+        canvas.image = photo
+        canvas.delete("all")
+        canvas.create_image(0, 0, anchor=tk.NW, image=canvas.image)
+        
+        '''
+        image_pil = Image.fromarray(np.uint8((image-np.min(image))/(np.max(image)-np.min(image))*255))
+        resized_image = image_pil.resize((width, height))
+        photo = ImageTk.PhotoImage(resized_image)
+        
+        canvas.image = photo  
+        canvas.create_image(0, 0, anchor = tk.NW, image=canvas.image)'''
+        
+    def on_pc_image_motion(self, event):
+        '''Coords and Values display in the status bar when mouse is over the PC images.'''
+        if event.inaxes is None or event.xdata is None or event.ydata is None:
+            return
+
+        for key, meta in getattr(self, "pc_image_meta", {}).items():
+            im = meta["im"]
+            if event.inaxes is im.axes:
+                arr = meta["data"]
+                x = int(round(event.xdata))
+                y = int(round(event.ydata))
+
+                if 0 <= y < arr.shape[0] and 0 <= x < arr.shape[1]:
+                    val = arr[y, x]
+                    self.set_status(f"{meta['label']}  x={x}, y={y}, value={val:.3g}")
+                break
+
+    def save_image(self, data):
+      files = [('All Files', '*.*'), 
+                ('Python Files', '*.py'),
+                ('HDF5 File', '*.hdf5'),
+                ('Tiff File', '*.tiff')]
+      file = asksaveasfilename(filetypes = files, defaultextension = '.tif')
+        #file = asksaveasfilename()
+      if not file: 
+          return
+      
+      im = Image.fromarray(data)
+      sv = im.save(file)
+
+
+    def Upload(self, reconstruction):        
+        self.set_status(f"Preparing reconstruction with {reconstruction.get()}...")
+        self.Compare_Fit(self.images, self.images_reference,  self.images.shape[2]//2, self.images.shape[1]//2, rec_type=reconstruction)
+
+        self.CompareButton['state'] = 'normal'
+        self.Y_position['state'] = 'normal'
+        self.X_position['state'] = 'normal'
+        self.RetrieveButton['state'] = 'normal'
+        self.set_status("Ready.")
+
+    def Compare_Fit(self, images, images_reference, x_position, y_position, rec_type):
+        if rec_type.get() == 'FFT':  
+            rtype = 'FFT'
+        elif rec_type.get() == 'Least Squares' or rec_type.get() == 'Least Squares Kaeppler' or rec_type.get() == 'Improve_least_squares' or rec_type.get() == 'Dose Correction':  
+            rtype = 'least_squares'
+        elif rec_type.get() == 'Fast Least Squares':
+            rtype = 'fast_lstsq'
+        elif rec_type.get() == 'Step Correction':
+            rtype = 'Step_correction'
+        elif rec_type.get() == 'Fast FFT':
+            rtype = 'Fast_FFT'
+        plt.close()
+
+        params = {"text.color" : "black",
+          "xtick.color" : "black",
+          "ytick.color" : "black"}
+        plt.rcParams.update(params)
+        
+        x_data, y_data, x, y = Image_Display.Pixel_intensity_one_period(images, x_position,y_position,rtype, Fourier=False)
+        x_data_r, y_data_r, x_r, y_r = Image_Display.Pixel_intensity_one_period(images_reference, x_position,y_position,rtype,Fourier=False)
+        fig=Figure(figsize=(3,1.5))
+        ax = fig.add_subplot(1,1,1)
+        ax.set_title('Fit at ({},{})'.format(x_position, y_position))
+        ax.scatter(x_data, y_data, color= "blue",marker= ".")
+        ax.plot(x, y,label='Sample', color ="blue")
+        ax.scatter(x_data_r, y_data_r, color= "red",marker= ".")
+        ax.plot(x_r,y_r, label='Reference', color ="red")
+        ax.legend(loc='best')
+        ax.set_ylabel("Intensity")
+        ax.set_xlabel(r'$\chi$') 
+        old_x_axis = (0,np.pi/2,np.pi,3*np.pi/2,2*np.pi)
+        new_x_axis = ('0',r'$\pi/2$',r'$\pi$',r'$3\pi/4$',r'$2\pi$')
+        #ax.set_xticks(old_x_axis, new_x_axis)
+        
+        canvasf = FigureCanvasTkAgg(fig, master=self.SinesPlot)
+        canvasf.get_tk_widget().grid(row=1, column=0, ipadx=60, ipady=40)
+        canvasf.draw()
+        
+        #toolbarFrame = Button(SinesPLot,text='Save Image', command=save_image(fig))
+        #toolbarFrame.grid(row=2,column=0)        
+
+    def initialize_Figure(self, frame, figsize, row, column):
+
+        fig = Figure(figsize = figsize)
+        canvas = FigureCanvasTkAgg(fig, master=frame)
+        fig.set_facecolor("#333333")
+
+        canvas.draw()
+        canvas.get_tk_widget().grid(row=row, column=column, padx=5, pady=0, sticky="nsew")
+
+    def Plot_Figure(self, frame, image, row, column, figsize, title, store_attr=None):
+        plt.close()
+        
+        params = {"text.color" : "white",
+          "xtick.color" : "white",
+          "ytick.color" : "white"}
+        
+        plt.rcParams.update(params)
+
+        fig=Figure(figsize=figsize)
+        fig.set_facecolor("#333333")
+        ax = fig.add_subplot(1,1,1)
+        
+        im = ax.imshow(image,"gray")
+        ax.set_title(title)
+        fig.colorbar(im,ax=ax)
+        #plt.show()
+        canvas1 = FigureCanvasTkAgg(fig, master=frame)
+        canvas1.draw()
+        canvas1.get_tk_widget().grid(row=row, column=column,padx=5, pady=0, sticky="nsew")
+        toolbarFrame1 = tk.Frame(master=frame)
+        toolbarFrame1.grid(row=row+1,column=column)
+        
+        if store_attr is not None:
+            setattr(self, store_attr, im)
+        
+        def onclick(event):
+            if event.xdata is not None and event.ydata is not None:
+                x = int(event.xdata)
+                y = int(event.ydata)
+                self.X_position.delete(0, tk.END)
+                self.X_position.insert(0, str(x))
+                self.Y_position.delete(0, tk.END)
+                self.Y_position.insert(0, str(y))
+                self.Compare_Fit(self.images, self.images_reference, x, y, self.Algorithm_ComboBox)
+                
+                pc_meta = getattr(self, "pc_image_meta", None)
+                if not pc_meta:
+
+                    axes = event.inaxes
+                    if axes is None:
+                        return
+                    marker = self.click_markers.get(axes)
+                    if marker is None:
+                        marker, = axes.plot(x, y, "r+", markersize=8, mew=1.5)
+                        self.click_markers[axes] = marker
+                    else:
+                        marker.set_data([x], [y])
+                    axes.figure.canvas.draw_idle()
+                    return
+
+                for meta in pc_meta.values():
+                    img = meta["im"]
+                    axes = img.axes
+                    marker = self.click_markers.get(axes)
+                    if marker is None:
+                        marker, = axes.plot(x, y, "r+", markersize=8, mew=1.5)
+                        self.click_markers[axes] = marker
+                    else:
+                        marker.set_data([x], [y])
+
+                    axes.figure.canvas.draw_idle()
+        fig.canvas.mpl_connect("button_press_event", onclick)
+        
+    def create_phase_wiener_panel(self):
+
+        if hasattr(self, "phase_wiener_frame"):
+            self.phase_wiener_frame.destroy()
+
+        self.phase_wiener_frame = ttk.LabelFrame(self.frame_at_right, text="Wiener Filter", style="Custom.TLabelframe", padding=(4, 4))
+
+        self.phase_wiener_frame.grid(row=0, column=0, sticky="n", padx=5, pady=(3,3))
+
+        # v0
+        ttk.Label(self.phase_wiener_frame, text="v0:", style="TLabel").grid(
+            row=0, column=0, sticky="e", padx=3, pady=1)
+        ttk.Entry(self.phase_wiener_frame, textvariable=self.v0, width=8).grid(
+            row=0, column=1, sticky="w", padx=3)
+        
+        # n
+        ttk.Label(self.phase_wiener_frame, text="n:", style="TLabel").grid(
+            row=1, column=0, sticky="e", padx=3, pady=1)
+        ttk.Entry(self.phase_wiener_frame, textvariable=self.n, width=5).grid(
+            row=1, column=1, sticky="w", padx=3)
+
+        # s
+        ttk.Label(self.phase_wiener_frame, text="s:", style="TLabel").grid(
+            row=2, column=0, sticky="e", padx=3, pady=1)
+        ttk.Entry(self.phase_wiener_frame, textvariable=self.s, width=8).grid(
+            row=2, column=1, sticky="w", padx=3)
+
+        ttk.Button(self.phase_wiener_frame, text="Apply", command=self.reapply_wiener_to_phase,
+            style="TButton", width=12).grid(row=3, column=0, columnspan=2, pady=(5, 2))
+
+        self.phase_wiener_frame.columnconfigure(1, weight=1)
+        
+    def reapply_wiener_to_phase(self):
+
+        v0 = float(self.v0.get())
+        n = int(self.n.get())
+        s = float(self.s.get())
+        px = float(self.pixel_size.get())
+        
+        DPC = self.last_diff
+
+        Phase_new = Apply_Phase_Wiener_filter(DPC, px, px, v0, n, s)
+
+        self.last_Phase = Phase_new
+
+        if hasattr(self, "im_phase"):
+            self.im_phase.set_data(Phase_new)
+            self.im_phase.axes.figure.canvas.draw_idle()
+
+        self.set_status(f"Wiener applied (v0={v0}, n={n}, s={s})")
+
+    def Run(self, reconstruction):
+        
+        global Diff_Phase, attenuation, transmission, Dark_Field, Phase
+        #Compare_Fitting(images, images_reference,1,float(G2PeriodV.get()), 400, 400, FFT=False)
+        if reconstruction.get() == 'Least Squares':
+            rec_type='least_squares'
+        if reconstruction.get() == 'Fast Least Squares':
+            rec_type = 'fast_lstsq'
+        if reconstruction.get() == 'Least Squares Kaeppler':
+            rec_type='least_squares_corrections'
+        if reconstruction.get() == 'Improve_least_squares':
+            rec_type = 'Improve_least_squares' 
+        if reconstruction.get() == 'Step Correction':
+            rec_type = 'Step_correction' 
+        if reconstruction.get() == 'Dose Correction':
+            rec_type = 'Dose_correction' 
+        if reconstruction.get() == 'FFT':
+            rec_type = 'FFT'
+        if reconstruction.get() == 'Fast FFT':
+            rec_type = 'Fast_FFT'
+            
+        self.set_status(f"Running reconstruction ({reconstruction.get()})...")
+        
+        # Disabled button during reconstruction
+        self.RetrieveButton.config(state="disabled")
+        self.master.update_idletasks()
+        self.set_ui_busy(True)
+        self.show_overlay("Reconstructing...")
+        
+        def worker():
+            try:
+                start_time = time.perf_counter()
+                Diff_Phase, transmission, Dark_Field, Phase, _, _ = Modulation_Curve_Reconstruction(self.images, self.images_reference,
+                self.G2Period_default.get(),self.DSG1_Default.get(), self.DG1G2_Default.get(), self.DOG1_Default.get(), self.Energy_Default.get(), self.pixel_size.get(),type=rec_type, unwrap_phase=False)
+                end_time = time.perf_counter()
+                elapsed_time = end_time - start_time
+                print("time: {} s".format(elapsed_time))
+                
+                self.last_Phase = Phase
+                self.last_diff = Diff_Phase
+                
+                Phase = Apply_Phase_Wiener_filter(Diff_Phase, self.pixel_size.get(), self.pixel_size.get(), self.v0.get(), self.n.get(), self.s.get())
+                
+                def update_ui():
+                    
+                    self.Plot_Figure(self.CanvasPlot, Diff_Phase, 0, 0, (3,3), 'Phase Gradient', store_attr="im_dpc")
+                    self.Plot_Figure(self.CanvasPlot, Phase, 0, 1, (3,3), 'Integrated Phase', store_attr="im_phase")
+                    self.create_phase_wiener_panel()
+                    self.Plot_Figure(self.CanvasPlot, transmission, 2, 0, (3,3), 'Transmission', store_attr="im_tr")
+                    self.Plot_Figure(self.CanvasPlot, Dark_Field, 2, 1, (3,3), 'Dark Field', store_attr="im_df")
+                
+                    bt1 = wg.create_button(self.CanvasPlot, 'Save Image', 1,0, command=  lambda : self.save_image(Diff_Phase))
+                    bt2 = wg.create_button(self.CanvasPlot, 'Save Image', 1,1, command=  lambda : self.save_image(Phase))
+                    bt3 = wg.create_button(self.CanvasPlot, 'Save Image', 3,0, command=  lambda : self.save_image(transmission))
+                    bt4 = wg.create_button(self.CanvasPlot, 'Save Image', 3,1, command=  lambda : self.save_image(Dark_Field))
+                
+            
+                    if hasattr(self, "wl_master_frame"):
+                        self.wl_master_frame.destroy()
+
+                    self.wl_master_frame = ttk.LabelFrame(self.frame_at_right, text='Window/Level Controls', padding=(4,4))
+                    self.wl_master_frame.grid(row=1, column=0, sticky="n", padx=5, pady=(0,5))
+                    
+                    self.image_controls = {}
+
+                    self.image_controls["dpc"] = ImageControlPanel(
+                        parent_frame=self.wl_master_frame,
+                        title="DPC",
+                        image_array=Diff_Phase,
+                        im_handle=self.im_dpc,
+                        row=0)
+
+                    self.image_controls["phase"] = ImageControlPanel(
+                        parent_frame=self.wl_master_frame,
+                        title="I.P.",
+                        image_array=Phase,
+                        im_handle=self.im_phase,
+                        row=1)
+
+                    self.image_controls["tr"] = ImageControlPanel(
+                        parent_frame=self.wl_master_frame,
+                        title="Tr",
+                        image_array=transmission,
+                        im_handle=self.im_tr,
+                        row=2)
+
+                    self.image_controls["df"] = ImageControlPanel(
+                        parent_frame=self.wl_master_frame,
+                        title="DF",
+                        image_array=Dark_Field,
+                        im_handle=self.im_df,
+                        row=3)
+                    
+                    self.pc_image_meta = {
+                        "phasegrad": {
+                            "label": "Phase Gradient",
+                            "im": self.im_dpc,
+                            "data": Diff_Phase,
+                        },
+                        "phase": {
+                            "label": "Integrated Phase",
+                            "im": self.im_phase,
+                            "data": Phase,
+                        },
+                        "trans": {
+                            "label": "Transmission",
+                            "im": self.im_tr,
+                            "data": transmission,
+                        },
+                        "df": {
+                            "label": "Dark Field",
+                            "im": self.im_df,
+                            "data": Dark_Field,
+                        },
+                    }
+                    
+                    for meta in self.pc_image_meta.values():
+                        canvas = meta["im"].figure.canvas
+                        canvas.mpl_connect("motion_notify_event", self.on_pc_image_motion)
+
+                    self.set_status(f"Reconstruction finished in {elapsed_time:.2f} s.")
+
+                self.master.after(0, update_ui)
+            except Exception as e:
+                def show_err():
+                    messagebox.showerror(
+                        "Error",
+                        f"An error occurred during reconstruction:\n{e}"
+                    )
+                    self.set_status("Error during reconstruction.")
+                self.master.after(0, show_err)
+
+            finally:
+                
+                def cleanup():
+                    self.set_ui_busy(False)
+                    self.hide_overlay()
+                self.master.after(0, cleanup)
+
+            
+        threading.Thread(target=worker, daemon=True).start()
+        
+    def set_ui_busy(self, busy: bool):
+        """
+        busy = True  -> disable
+        busy = False -> normal
+        """
+        state = "disabled" if busy else "normal"
+        
+        INTERACTIVE_TYPES = (
+            tk.Button, ttk.Button,
+            tk.Entry, ttk.Entry,
+            ttk.Combobox,
+            tk.Checkbutton, ttk.Checkbutton,
+            tk.Radiobutton, ttk.Radiobutton,
+            tk.Spinbox, ttk.Spinbox,
+        )
+
+        def recurse(widget):
+            for child in widget.winfo_children():
+                if isinstance(child, INTERACTIVE_TYPES):
+                    try:
+                        child.configure(state=state)
+                    except tk.TclError:
+                        pass
+                recurse(child)
+
+        recurse(self.master)
+
+        try:
+            self.master.configure(cursor="watch" if busy else "")
+        except tk.TclError:
+            pass
+        
+    def set_ui_busy_threadsafe(self, busy: bool):
+        self.master.after(0, lambda: self.set_ui_busy(busy))
+        
+    #Transparent Loading Screen
+    
+    def _sync_overlay_to_master(self, event=None):
+        if self.overlay is None:
+            return
+
+        try:
+            self.overlay.deiconify()
+            self.overlay.lift(self.master)
+        except tk.TclError:
+            return
+
+        self.master.update_idletasks()
+        w = self.master.winfo_width()
+        h = self.master.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+
+        x = self.master.winfo_rootx()
+        y = self.master.winfo_rooty()
+        self.overlay.geometry(f"{w}x{h}+{x}+{y}")
+    
+    def show_overlay(self, message="Reconstructing..."):
+
+        if self.overlay is not None and self.overlay.winfo_exists():
+            try:
+                self.overlay.lift(self.master)
+            except tk.TclError:
+                pass
+            return
+
+        self.master.update_idletasks()
+        x = self.master.winfo_rootx()
+        y = self.master.winfo_rooty()
+        w = self.master.winfo_width()
+        h = self.master.winfo_height()
+
+        overlay = tk.Toplevel(self.master)
+        overlay.overrideredirect(True)
+        overlay.attributes("-alpha", 0.75)
+        overlay.configure(background="#000000")
+        overlay.geometry(f"{w}x{h}+{x}+{y}")
+        overlay.lift(self.master)
+        overlay.transient(self.master)
+
+        frame = tk.Frame(overlay, bg="#000000")
+        frame.pack(expand=True, fill="both")
+
+        label = tk.Label(
+            frame,
+            text=message,
+            fg="white",
+            bg="#000000",
+            font=("Segoe UI", 16, "bold")
+        )
+        label.pack(pady=10)
+
+        pb_var = tk.DoubleVar(value=0.0)
+        pb = ttk.Progressbar(
+            frame,
+            variable=pb_var,
+            maximum=100,
+            mode="determinate",
+            length=250
+        )
+        pb.pack(pady=10)
+
+        self.overlay = overlay
+        self.overlay_label = label
+
+        overlay.update_idletasks()
+        
+    def show_threadsafe(self, message="Reconstructing..."):
+        self.master.after(0, lambda: self.show_loading_overlay(message))
+
+
+    def hide_overlay(self):
+        if self.overlay is not None:
+            try:
+                self.overlay.destroy()
+            except tk.TclError:
+                pass
+
+        self.overlay = None
+        self.overlay_label = None
+
+        
+    def hide_overlay_threadsafe(self):
+        self.master.after(0, self.hide_loading_overlay)
+        
+    def _on_dd_hover(self, widget, inside: bool):
+        if inside:
+            widget.configure(bg="#3d3d3d", bd=3)
+        else:
+            widget.configure(bg="#303030", bd=2)
+            
+    def selected_algorithm(self, event):
+        selected = self.Algorithm_ComboBox.get()
+        self.Upload(self.Algorithm_ComboBox)
+        self.set_status(f"Selected reconstruction algorithm: {selected}")
+            
+if __name__ == "__main__":
+    TLRec_GUI()

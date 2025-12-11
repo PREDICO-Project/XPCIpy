@@ -1,6 +1,4 @@
 import numpy as np
-from src.PCSim.utils import  closest_to, interpolate
-import os
 from pathlib import Path
 
 MATERIALS_DIR = Path(__file__).resolve().parents[2] / "Resources" / "complex_refractive_index"

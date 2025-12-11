@@ -1,7 +1,5 @@
 import numpy as np
-from scipy import optimize, fftpack, interpolate, signal
-import matplotlib.pyplot as plt
-from tqdm import tqdm
+
 def cosfunc(t, A, w, p, c):  
   return A * np.cos(w*t + p) + c
 

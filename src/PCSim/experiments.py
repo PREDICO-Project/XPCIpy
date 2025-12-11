@@ -1,16 +1,12 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import src.PCSim.Objects as obj
 import src.PCSim.propagation as prop
 import src.PCSim.utils as utils
-import src.PCSim.material as mat
-import cv2
-from scipy.ndimage.interpolation import rotate
+from skimage.transform import resize
 from tqdm import tqdm
 
 #import threading
 
-def Experiment_Inline(n, Geometry, Source, Detector,Objects, padding = 0):
+def Experiment_Inline(n, Geometry, Source, Detector,Objects, padding = 0, progress_cb=None):
     
     energies = Source.energies
     energy_weights = Source.intensities
@@ -41,6 +37,7 @@ def Experiment_Inline(n, Geometry, Source, Detector,Objects, padding = 0):
 
     px_ref = Source.pixel_size  # Pixel size at the beginning (source plane)
     Intensity = np.zeros((n,n), dtype = float)
+    total = len(energies)
     
     for i, energy in enumerate(tqdm(energies, desc="Energies")):
         px_current = px_ref
@@ -89,6 +86,9 @@ def Experiment_Inline(n, Geometry, Source, Detector,Objects, padding = 0):
        
         #print(f"Energy: {energy} keV, Weight: {w}, Magnification: {M}")
         Intensity += I * (energy_weights[i])
+        
+        if progress_cb is not None:
+            progress_cb((i + 1) / total)
     
     M_global = Geometry.calculate_magnification(z_ref, z_det, conical)
 
@@ -107,7 +107,7 @@ def Experiment_Inline(n, Geometry, Source, Detector,Objects, padding = 0):
 
     return Intensity    
 
-def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL_CONFIG, padding = 0):
+def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL_CONFIG, padding = 0, progress_cb=None):
 
     Energies = Source.energies
     energy_weights = Source.intensities
@@ -150,6 +150,8 @@ def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL
     images = []
     images_reference = []
 
+    total = steps
+    
     for N in tqdm(range(0,steps), desc='phase steps'):
         M_step = Geometry.calculate_magnification(z_G1, z_det, conical)
         if Movable_Grating == 'G2':
@@ -220,14 +222,17 @@ def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL
         I_obj = Source.PSF_blurr(I_obj, current_pixel_size=px, Magnification=Geometry.calculate_magnification(z_ref, z_det, conical))
         I_ref = Source.PSF_blurr(I_ref, current_pixel_size=pxR, Magnification=Geometry.calculate_magnification(z_ref, z_det, conical))
 
-        if Detector.Image_option == 'Realistic':
-            print('Applying detector effects')
-            px_det = Geometry.pixel_size_at_distance(px_ref, z_ref, z_det, conical)
-            I_obj = Detector.applyDetector(I_obj, current_pixel_size=px_det)
-            I_ref = Detector.applyDetector(I_ref, current_pixel_size=px_det)
+        #if Detector.Image_option == 'Realistic':
+        print('Applying detector effects')
+        px_det = Geometry.pixel_size_at_distance(px_ref, z_ref, z_det, conical)
+        I_obj = Detector.applyDetector(I_obj, current_pixel_size=px_det)
+        I_ref = Detector.applyDetector(I_ref, current_pixel_size=px_det)
 
         images.append(I_obj)
         images_reference.append(I_ref)
+        
+        if progress_cb is not None:
+            progress_cb((N + 1) / total)
 
     images = np.asarray(images)
     images_reference = np.asarray(images_reference)
@@ -334,8 +339,6 @@ def Experiment_Phase_Stepping_test(n, Detector, Source, Geometry, Objects, G1, G
             I_obj += np.abs(UObjG2)**2     
             I_ref += np.abs(UG1G2)**2
 
-            
-
         #intensity_reference_blur = utils.convolve(psf_detector, intensity_reference_blur)
         
 
@@ -351,8 +354,18 @@ def Experiment_Phase_Stepping_test(n, Detector, Source, Geometry, Objects, G1, G
 def zoom_in(wavefront, factor):
     height, width = wavefront.shape
     new_height, new_width = int(height * factor), int(width * factor)
-    resized_real = cv2.resize(wavefront.real, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-    resized_imag = cv2.resize(wavefront.imag, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+    
+    if new_height == height and new_width == width:
+        return wavefront.copy()
+
+    real = wavefront.real
+    imag = wavefront.imag
+
+    # Interpolación cúbica (order=3), modo 'reflect', sin cambiar el rango
+    resized_real = resize(real, (new_height, new_width), order=3, mode="reflect", anti_aliasing=False, preserve_range=True)
+    resized_imag = resize(imag, (new_height, new_width), order=3, mode="reflect", anti_aliasing=False, preserve_range=True)
+    #resized_real = cv2.resize(wavefront.real, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+    #resized_imag = cv2.resize(wavefront.imag, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
     
     start_y = (new_height - height) // 2
     start_x = (new_width - width) // 2

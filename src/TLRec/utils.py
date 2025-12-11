@@ -1,15 +1,18 @@
 import numpy as np
 import os
-from skimage import io, restoration
 import tifffile as tif
 from PIL import Image
-import matplotlib.pyplot as plt
 import scipy.fftpack as fftpack
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import generic_filter
+
 try:
-  from numba import jit
+    from numba import jit
 except Exception as err:
-  print(f'Numba cannot be imported: {err}')
+    #print(f'Numba cannot be imported: {err}')
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 """
 In this file there are some useful functions to make different calculations.
@@ -110,7 +113,8 @@ def read_Tiff_file(name):
     file_images =os.path.join(path_to_Data, name+'.tif')
   except:
     file_images = os.path.abspath(name)
-  image = io.imread(file_images)
+    
+  image = tif.imread(file_images)
   return image
 
 def save_results(filename_images,Diff_Phase,attenuation,Dark_Field,Phase):
@@ -297,6 +301,8 @@ def Apply_Phase_Wiener_filter(DPC, x_pixel_size, y_pixel_size, v0, n, s):
       numpy array: Integrated Phase Image
   """
 
+  
+
   Ny = DPC.shape[0]
   Nx = DPC.shape[1]
  
@@ -346,3 +352,34 @@ def Apply_Phase_Wiener_filter(DPC, x_pixel_size, y_pixel_size, v0, n, s):
   #Phase,_ = restoration.unsupervised_wiener(DPC, D)
   Phase = np.real(Phase)
   return Phase
+
+def fill_nans(image, size=3):
+  
+    if np.isfinite(image).all():
+        return image
+      
+    mask = ~np.isfinite(image)
+
+    def nanmean_filter(window):
+        vals = window[np.isfinite(window)]
+        if vals.size == 0:
+            return 0.0
+        return vals.mean()
+
+    filled = generic_filter(image, nanmean_filter, size=size, mode="nearest")
+    image[mask] = filled[mask]
+    return image
+  
+def fill_nans_zero(image):
+    """
+    Faster version of fill_nans that only fills NaN/Inf with zeros.
+    """
+    image = np.asarray(image)
+
+    if np.isfinite(image).all():
+        return image
+      
+    out = image.astype(float, copy=True)
+    mask = ~np.isfinite(out)
+    out[mask] = 0.0
+    return out

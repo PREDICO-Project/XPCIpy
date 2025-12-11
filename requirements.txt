@@ -1,10 +1,9 @@
-imageio
-matplotlib
-numba
 numpy
-opencv_python
-Pillow
-scikit_image
 scipy
+scikit-image
+Pillow
 tifffile
+matplotlib
 tqdm
+tkinterdnd2
+numba

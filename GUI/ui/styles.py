@@ -37,3 +37,10 @@ class Styles:
                   fieldbackground=[("active", combobox_hover_background), ("disabled", '#ffffff')],
                   foreground=[("active", combobox_hover_foreground)],
                   background=[("active", combobox_hover_background), ("disabled", '#737373')])
+        style.configure("Dark.Horizontal.TScale", background="gray20", troughcolor="gray35")
+        
+        style.configure("ToggleOn.TButton", background="green", foreground="white")
+        style.map("ToggleOn.TButton", background=[("active", "darkgreen")])
+
+        style.configure("ToggleOff.TButton", background="red", foreground="white")
+        style.map("ToggleOff.TButton", background=[("active", "darkred")])

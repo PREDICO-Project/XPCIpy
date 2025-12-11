@@ -4,9 +4,13 @@ import src.TLRec.utils as utils
 import src.TLRec.Correction as Correction
 
 try:
-  from numba import njit, float64
+    from numba import njit
 except Exception as err:
-  print(f'Numba cannot be imported: {err}')
+    #print(f'Numba cannot be imported: {err}')
+    def njit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 """
 In this python file are located different functions to make the fit of the data points to a sine/cosine function.

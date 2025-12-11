@@ -6,6 +6,10 @@ venv/
 Notebooks/Results/
 Data/
 Output/
+dist/
+build/
+*.egg-info/
+
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -20,6 +24,9 @@ Output/
 *.out
 *.pdf
 test*
+*.spec
 
 # Files
 Notebooks/test*
+all.txt
+

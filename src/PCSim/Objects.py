@@ -2,7 +2,6 @@ import numpy as np
 from src.PCSim.material import make_material
 from scipy.ndimage import rotate
 import warnings
-import matplotlib.pyplot as plt
 
 class GeometricObject():
     def __init__(self, n, pixel_size, material, DSO,

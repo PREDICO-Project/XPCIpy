@@ -1,0 +1,18 @@
+{
+    "type": "TL_SIM",
+    "n": 1000,
+    "pixel_size": 1.0,
+    "FWHM_source": 10.0,
+    "Beam_Shape": "Plane",
+    "Beam_Spectrum": "Monoenergetic",
+    "energy": 25.0,
+    "DSO": 16.69,
+    "DOG1": 1.0,
+    "Period_G1": 6.0,
+    "G1_Phase": "Phase pi",
+    "steps": 10,
+    "step_length": 1.0,
+    "Object": "Sphere",
+    "radius": 200.0,
+    "material": "H2O.txt"
+}
