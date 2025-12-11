@@ -4,7 +4,7 @@
 This document summarizes all approved updates, fixes, and improvements implemented in the Reconstruction (TLRec) and Simulation (PCSim) GUI modules.
 
 ---
-[Unreleased] - Major GUI Refactor & Usability Improvements
+[v. 1.1.0] - Major GUI Refactor & Usability Improvements
 
 ### 1. General Architecture Improvements
 - Removed all `global root` patterns throughout the codebase for safety, clarity, and better separation of concerns.
