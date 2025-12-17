@@ -5,7 +5,7 @@ from tkinter import ttk
 from tkinter.filedialog import asksaveasfilename, askopenfilename
 import os
 import tifffile
-from PIL import Image
+from PIL import Image, ImageTk
 #import matplotlib.pyplot as plt
 from matplotlib import rcParams
 import numpy as np
@@ -96,7 +96,6 @@ class PCSim_gui:
         help_menu.add_command(label="License", command=self.open_license_window)
         
         menubar.add_cascade(label="Help", menu=help_menu)
-        
 
         global Beam_Shape_OPTIONS, Beam_Spectrum_OPTIONS, Object_OPTIONS, Image_OPTIONS
         #spectra_path = os.path.join(self.parent_path, 'Resources', 'Spectra') # OLD
@@ -214,6 +213,8 @@ class PCSim_gui:
         
         wg.create_button(parameters_frame, "Save preset", 15, 0, command=self.save_preset_Inline)
         wg.create_button(parameters_frame, "Load preset", 15, 1, command=self.load_preset_Inline)
+        
+        self.add_detector_post_panel(parameters_frame, mode="inline", row=17)
 
         ExitButton = wg.create_button(parameters_frame, "Exit", 16, 0, padx = 60, command=self.close_app)
         
@@ -307,11 +308,13 @@ class PCSim_gui:
         scrollframe.grid(row=0, column=0, sticky="nsew")
         
         container = scrollframe.interior
+        container.grid_columnconfigure(2, weight=1)
         
         self.TL_tab.grid_rowconfigure(0, weight=1)
         self.TL_tab.grid_columnconfigure(0, weight=0)
         self.TL_tab.grid_columnconfigure(1, weight=0)
         self.TL_tab.grid_columnconfigure(2, weight=1)
+        
         
         parameters_frame = ttk.Frame(container, style='TFrame')
         parameters_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
@@ -319,8 +322,10 @@ class PCSim_gui:
         
         self.TL_results_frame = ttk.Frame(container, style='TFrame')
         self.TL_results_frame.grid(row = 0, column = 2, rowspan=12,  sticky='nsew')
+        self.TL_results_frame.grid_rowconfigure(0, weight=1)
+        self.TL_results_frame.grid_columnconfigure(0, weight=1)
 
-        self.initialize_Figure(self.TL_results_frame, (3,3), 0,0)
+        self.initialize_Figure(self.TL_results_frame, (5,5), 0,0)
         
         nLabel, _ = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.TL_n,padx = 20)
         pxLabel, _ = wg.create_label_entry(parameters_frame, 'Pixel size (microns)', 1, 0,textvariable=self.TL_pixel_size,padx = 20)
@@ -353,6 +358,8 @@ class PCSim_gui:
         wg.create_button(parameters_frame, "Load preset", 25, 1, command=self.load_preset_TL)
 
         ExitButton = wg.create_button(parameters_frame, "Exit", 26, 0, padx = 60, command=self.close_app)
+        
+        self.add_detector_post_panel(parameters_frame, mode="tl", row=27)
         
         self.add_tooltip(nLabel, "Number of pixels of the simulated wavefront (n x n).")
         self.add_tooltip(pxLabel, "Pixel size of the wavefront grid in micrometers.")
@@ -561,7 +568,13 @@ class PCSim_gui:
             self.TL_resolution.set(default_TL_conf['resolution'])
             self.TL_detector_pixel_size.set(default_TL_conf['detector_pixel_size'])
 
+        # Detector postprocessing without rerunning the simulation
 
+        self.dp_pixel_det_um = tk.DoubleVar(value=0.0)
+        self.dp_fwhm_det_um = tk.DoubleVar(value=0.0)
+        self.dp_noise_type = tk.StringVar(value="gaussian")
+        self.dp_gauss_sigma = tk.DoubleVar(value=0.0) 
+        self.dp_poisson_N0 = tk.DoubleVar(value=1e5)
         
     def RunInline(self):
         
@@ -617,16 +630,49 @@ class PCSim_gui:
 
             Sample = [MyObject1]
             progress_cb = self.make_progress_callback("Inline simulation")
-            Intensity = exp.Experiment_Inline(n, MyGeometry, MySource, MyDetector, Sample, progress_cb=progress_cb)
+            Intensity, Intensity_raw = exp.Experiment_Inline(n, MyGeometry, MySource, MyDetector, Sample, progress_cb=progress_cb, return_raw=True, apply_detector=True)
+            
+            
+            self.inline_raw_intensity = np.asarray(Intensity_raw, dtype=np.float32)
+            self.inline_display_intensity = np.asarray(Intensity, dtype=np.float32)
+            self.inline_raw_px_um = float(self.i_pixel_size.get())
+
             
             def update_gui():
-                self.clear_frame(self.i_results_frame)
-                self.Plot_Figure(self.i_results_frame, Intensity, 0, 0, (3, 3), 'Inline Simulation')
-                wg.create_button(self.i_results_frame, 'Save Image', 1, 0,
-                                command=lambda: self.save_image(Intensity))
+                
+                dual = ttk.Frame(self.i_results_frame, style="TFrame")
+                dual.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+                
+                self.i_results_frame.grid_rowconfigure(0, weight=1)
+                self.i_results_frame.grid_columnconfigure(0, weight=1)
+
+                dual.grid_rowconfigure(0, weight=1)
+                dual.grid_columnconfigure(0, weight=1, uniform="dual")
+                dual.grid_columnconfigure(1, weight=1, uniform="dual")
+
+                raw_f  = ttk.Frame(dual, style="TFrame")
+                post_f = ttk.Frame(dual, style="TFrame")
+                raw_f.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+                post_f.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+                
+                self.inline_raw_frame  = raw_f
+                self.inline_post_frame = post_f
+
+                self.Plot_Figure(raw_f,  self.inline_raw_intensity,  0, 0, (3, 3), "RAW (Pre-detector)")
+                self.Plot_Figure(post_f, self.inline_display_intensity, 0, 0, (3, 3), "Post-Processing")
+                
+                #self.clear_frame(self.i_results_frame)
+                #self.Plot_Figure(self.i_results_frame, self.inline_display_intensity, 0, 1, (3, 3), 'Post-Processing', columnspan=1)
+                #self.Plot_Figure(self.i_results_frame, self.inline_raw_intensity, 0, 0, (3,3), 'RAW (Pre-detector)', columnspan=1)
+                wg.create_button(raw_f, 'Save Raw Image', 1, 0,
+                                command=lambda: self.save_image(self.inline_raw_intensity))
+                
+                wg.create_button(post_f, 'Save Post-Processed Image', 1, 0,
+                                command=lambda: self.save_image(self.inline_display_intensity))
 
                 if self.i_zip_var.get():
-                    self.export_inline_zip(Intensity)
+                    self.export_inline_zip(self.inline_display_intensity)
 
             self.master.after(0, update_gui)
             
@@ -780,18 +826,78 @@ class PCSim_gui:
             self.gui_check_phase_stepping(self.TL_steps.get(), G2Period / pixel_size,self.TL_step_length.get() / pixel_size)
             
             progress_cb = self.make_progress_callback("TL simulation")
-            i, ir = exp.Experiment_Phase_Stepping(n, MyDetector, MySource, geometry, Objects, G1, G2, configuration, padding = 0, progress_cb=progress_cb)
+            i, ir, i_raw, ir_raw = exp.Experiment_Phase_Stepping(n, MyDetector, MySource, geometry, Objects, G1, G2, configuration, 
+                                                                 padding = 0, progress_cb=progress_cb, return_raw=True, apply_detector=True)
+            
+            # Copy to perform detector's modifications
+            self.TL_raw_i  = np.asarray(i_raw, dtype=np.float32)
+            self.TL_raw_ir = np.asarray(ir_raw, dtype=np.float32)
+            self.TL_i_display  = np.asarray(i, dtype=np.float32)
+            self.TL_ir_display = np.asarray(ir, dtype=np.float32)
+            
+            self.TL_raw_px_um = float(self.TL_detector_pixel_size.get())
             
             def update_gui():
-                self.clear_frame(self.TL_results_frame)
-                self.Plot_Modulation_Curve(self.TL_results_frame, i, ir, 0, 0, (3,3), 'Phase Stepping Curve', columnspan=2)
-                self.Plot_Figure(self.TL_results_frame, i[0,:,:], 1, 0, (3,3), 'One Projection', columnspan=2)
-                wg.create_button(self.TL_results_frame, 'Save Stack Object Images', 2,0, command=  lambda : self.save_stack_image(i))
-                wg.create_button(self.TL_results_frame, 'Save Stack Reference Images', 2,1, command=  lambda : self.save_stack_image(ir))
-                bt3 = wg.create_button(self.TL_results_frame, 'Send to TLRec', 3, 0,command=lambda: self.send_to_TLREC(i, ir))
+                
+                curve_f = ttk.Frame(self.TL_results_frame, style="TFrame")
+                curve_f.grid(row=0, column=0, columnspan=2, sticky="nsew")
+                self.Plot_Modulation_Curve(curve_f, self.TL_i_display, self.TL_ir_display, 0, 0, (3,3), "Phase Stepping Curve")
+                
+                dual = ttk.Frame(self.TL_results_frame, style="TFrame")
+                dual.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+
+                dual.grid_rowconfigure(0, weight=1)
+                dual.grid_columnconfigure(0, weight=1, uniform="dual")
+                dual.grid_columnconfigure(1, weight=1, uniform="dual")
+
+                raw_f  = ttk.Frame(dual, style="TFrame")
+                post_f = ttk.Frame(dual, style="TFrame")
+                raw_f.grid(row=0, column=0, sticky="nsew", padx=(0,5))
+                post_f.grid(row=0, column=1, sticky="nsew", padx=(5,0))
+
+                raw_f.grid_rowconfigure((0,1), weight=1)
+                raw_f.grid_columnconfigure(0, weight=1)
+
+                post_f.grid_rowconfigure((0,1), weight=1)
+                post_f.grid_columnconfigure(0, weight=1)
+
+                self.TL_raw_obj_frame  = ttk.Frame(raw_f)
+                self.TL_raw_ref_frame  = ttk.Frame(raw_f)
+                self.TL_post_obj_frame = ttk.Frame(post_f)
+                self.TL_post_ref_frame = ttk.Frame(post_f)
+
+                self.TL_raw_obj_frame.grid(row=0, column=0, sticky="nsew")
+                self.TL_raw_ref_frame.grid(row=1, column=0, sticky="nsew")
+                self.TL_post_obj_frame.grid(row=0, column=0, sticky="nsew")
+                self.TL_post_ref_frame.grid(row=1, column=0, sticky="nsew")
+                
+                
+                b, self.TL_canvas_raw_obj  = self.make_stack_viewer(raw_f,  "RAW Object")
+                b.grid(row=0, column=0, sticky="nsew")
+
+                b, self.TL_canvas_raw_ref  = self.make_stack_viewer(raw_f,  "RAW Reference")
+                b.grid(row=1, column=0, sticky="nsew")
+
+                b, self.TL_canvas_post_obj = self.make_stack_viewer(post_f, "POST Object")
+                b.grid(row=0, column=0, sticky="nsew")
+
+                b, self.TL_canvas_post_ref = self.make_stack_viewer(post_f, "POST Reference")
+                b.grid(row=1, column=0, sticky="nsew")
+
+                self.stack_viewer_set_stack(self.TL_canvas_raw_obj,  self.TL_raw_i)
+                self.stack_viewer_set_stack(self.TL_canvas_raw_ref,  self.TL_raw_ir)
+                self.stack_viewer_set_stack(self.TL_canvas_post_obj, self.TL_i_display)
+                self.stack_viewer_set_stack(self.TL_canvas_post_ref, self.TL_ir_display)
+                
+                wg.create_button(raw_f, 'Save Raw Object Stack', 2,0, command=  lambda : self.save_stack_image(self.TL_raw_i))
+                wg.create_button(raw_f, 'Save Raw Reference Stack', 3,0, command=  lambda : self.save_stack_image(self.TL_raw_ir))
+                
+                wg.create_button(post_f, 'Save Display Object Stack', 3,0, command=  lambda : self.save_stack_image(self.TL_i_display)) 
+                wg.create_button(post_f, 'Save Display Reference Stack', 2,0, command=  lambda : self.save_stack_image(self.TL_ir_display))
+                bt3 = wg.create_button(self.TL_results_frame, 'Send to TLRec', 4, 0,command=lambda: self.send_to_TLREC(self.TL_i_display, self.TL_ir_display))
             
                 if self.TL_zip_var.get():
-                    self.export_TL_zip(i, ir)
+                    self.export_TL_zip(self.TL_i_display, self.TL_ir_display)
                 
             self.master.after(0, update_gui)
             
@@ -919,7 +1025,7 @@ class PCSim_gui:
         ax.legend()
         ax.set_title(title)
         ax.set_xlabel('Phase Stepping')
-        fig
+        #fig
         #plt.show()
         canvas1 = FigureCanvasTkAgg(fig, master=frame)
         canvas1.draw()
@@ -951,18 +1057,26 @@ class PCSim_gui:
         canvas1.get_tk_widget().grid(row=row, column=column, ipadx=90, ipady=20)
 
     
-    def initialize_Figure(self, frame, figsize, row, column):
+    def initialize_Figure(self, frame, figsize, row, column, columnspan = 1):
 
         fig = Figure(figsize = figsize)
         canvas = FigureCanvasTkAgg(fig, master=frame)
         fig.set_facecolor("#333333")
 
         canvas.draw()
-        canvas.get_tk_widget().grid(row=row, column=column, ipadx=60, ipady=50,sticky='nsew')
+        w = canvas.get_tk_widget()
+        w.grid(row = row, column = column, columnspan=columnspan, padx=5, pady=5, sticky = 'nsew')
+        frame.grid_rowconfigure(row, weight=1)
+        frame.grid_columnconfigure(column, weight=1)
 
 
     def Plot_Figure(self, frame, image, row, column, figsize, title, columnspan=1):
         
+        # clean
+        for w in frame.winfo_children():
+            if isinstance(w, tk.Canvas):
+                w.destroy()
+            
         params = {
         "text.color": "white",
         "xtick.color": "white",
@@ -974,17 +1088,38 @@ class PCSim_gui:
 
         fig = Figure(figsize=figsize)
         fig.set_facecolor("#333333")
+        
         ax = fig.add_subplot(1, 1, 1)
 
         im = ax.imshow(image, "gray")
         ax.set_title(title)
-        fig.colorbar(im, ax=ax)
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         fig.tight_layout()
 
         canvas1 = FigureCanvasTkAgg(fig, master=frame)
         canvas1.draw()
-        canvas1.get_tk_widget().grid(row=row, column=column, columnspan=columnspan, ipadx=90, ipady=20)
+        w = canvas1.get_tk_widget()
+        w.grid(row=row, column=column, columnspan=columnspan, padx=5, pady=5, sticky="nsew")
+       
+        frame.grid_rowconfigure(row, weight=1)
+        frame.grid_columnconfigure(column, weight=1)
+        frame.update_idletasks()
         
+            
+        def _redraw(evt=None):
+            try:
+                canvas1.draw_idle()
+            except Exception:
+                pass
+
+        frame.update_idletasks()
+        frame.after_idle(_redraw)
+        
+        if not getattr(frame, "_mpl_cfg_bound", False):
+            frame.bind("<Configure>", _redraw)
+            frame._mpl_cfg_bound = True
+
+    
         '''
         plt.close()
         params = {"text.color" : "white",
@@ -1420,14 +1555,40 @@ class PCSim_gui:
             tk.Spinbox,
             ToggleButton,
         )
+        
+        def get_state(w):
+            if hasattr(w, "instate") and hasattr(w, "state"):
+                st = w.state()
+                return "disabled" if "disabled" in st else "normal"
+            try:
+                return str(w.cget("state"))
+            except Exception:
+                return "normal"
+
+        def set_state(w, state):
+            if hasattr(w, "instate") and hasattr(w, "state"):
+                if state == "disabled":
+                    w.state(["disabled"])
+                else:
+                    w.state(["!disabled"])
+                return
+            try:
+                w.configure(state=state)
+            except Exception:
+                pass
 
         def recurse(widget):
             for child in widget.winfo_children():
                 if isinstance(child, INTERACTIVE_TYPES):
-                    try:
-                        child.configure(state=state)
-                    except tk.TclError:
-                        pass
+                    if busy:
+                        if not hasattr(child, "_pre_busy_state"):
+                            child._pre_busy_state = get_state(child)
+                        set_state(child, "disabled")
+                    else:
+                        prev = getattr(child, "_pre_busy_state", "normal")
+                        set_state(child, prev)
+                        if hasattr(child, "_pre_busy_state"):
+                            delattr(child, "_pre_busy_state")
                 recurse(child)
 
         recurse(self.master)
@@ -1735,4 +1896,259 @@ class PCSim_gui:
     
     def add_tooltip(self, widget, text):
         ToolTip(widget, text)
+        
+    def add_detector_post_panel(self, parent_frame, mode="inline", row=99):
+        
+        lf = ttk.LabelFrame(parent_frame, text="Detector (post-processing, no rerun)", padding=(8, 6))
+        lf.grid(row=row, column=0, columnspan=3, sticky="ew", padx=5, pady=(10, 5))
+
+
+        wg.create_label_entry(lf, "Pixel size detector (um) [0 = use tab value]:", 0, 0, textvariable=self.dp_pixel_det_um, padx=10)
+
+        wg.create_label_entry(lf, "Detector FWHM (um) [0 = use tab value]:", 1, 0, textvariable=self.dp_fwhm_det_um, padx=10)
+
+        wg.create_label_combobox(lf, "Noise type", ["none", "poisson", "gaussian"], 2, 0, textvariable=self.dp_noise_type)
+        wg.create_label_entry(lf, "Gaussian sigma (only gaussian):", 3, 0, textvariable=self.dp_gauss_sigma, padx=10)
+        wg.create_label_entry(lf, "Photons per pixel (only poisson):", 4, 0, textvariable=self.dp_poisson_N0, padx=10)
+        
+        #ttk.Label(lf, text=f"Current image pixel size: {self.cur_px:.3g} um/px").grid(row=5, column=0)
+
+        bt_frame = ttk.Frame(lf, style="TFrame")
+        bt_frame.grid(row=5, column=0, sticky="ew", pady=(6, 0))
+        bt_frame.columnconfigure(0, weight=1)
+        bt_frame.columnconfigure(1, weight=1)
+
+        ttk.Button(bt_frame, text="Apply", command=lambda: self.apply_detector_post(mode)).grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        ttk.Button(bt_frame, text="Reset (raw)", command=lambda: self.reset_detector_post(mode)).grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+        
+        return lf
     
+    def get_post_detector_params(self, mode="inline"):
+        
+        noise = self.dp_noise_type.get().strip().lower()
+        if noise == "none":
+            noise = None
+
+        gauss_sigma = float(self.dp_gauss_sigma.get())
+        N0_poisson = float(self.dp_poisson_N0.get())
+
+        if mode == "inline":
+            tab_pixel_det = float(self.i_detector_pixel_size.get())
+            tab_fwhm = float(self.i_FWHM_detector.get())
+            base_px = float(self.i_pixel_size.get())
+        else:
+            tab_pixel_det = float(self.TL_detector_pixel_size.get())
+            tab_fwhm = float(self.TL_resolution.get())
+            base_px = float(self.TL_pixel_size.get())
+
+        px_det = float(self.dp_pixel_det_um.get())
+        fwhm = float(self.dp_fwhm_det_um.get())
+
+        if px_det <= 0:
+            px_det = tab_pixel_det
+        if fwhm <= 0:
+            fwhm = tab_fwhm
+
+        return px_det, fwhm, noise, gauss_sigma, base_px, N0_poisson
+
+
+    def apply_detector_post(self, mode="inline"):
+
+        def worker():
+            try:
+                self.set_status_threadsafe("Applying detector model (post)...")
+
+                px_det, fwhm, noise, gauss_sigma, base_px, N0_poisson = self.get_post_detector_params(mode)
+
+                det = detector.Detector(Image_option="Realistic", pixel_size_detector=px_det, FWHM_detector=fwhm, 
+                                        noise_type=noise, pixel_size=base_px, gaussian_sigma=gauss_sigma, N0=N0_poisson)
+                
+                if mode == "inline":
+                    if not hasattr(self, "inline_raw_intensity"):
+                        self.master.after(0, lambda: messagebox.showwarning("No data", "Run an Inline simulation first."))
+                        return
+
+                    cur_px = float(getattr(self, "inline_raw_px_um", self.i_pixel_size.get()))
+                    out = det.applyDetector(self.inline_raw_intensity, current_pixel_size=cur_px)
+                    out = np.asarray(out, dtype=np.float32)
+                    self.set_status_threadsafe('detector applied')
+                    self.inline_display_intensity = out
+                    
+                    def ui():
+                        
+                        if hasattr(self, "inline_post_frame") and self.inline_post_frame.winfo_exists():
+                            self.Plot_Figure(self.inline_post_frame, self.inline_display_intensity, 0, 0, (3, 3),"Post-Processing")
+                        else:
+                            # just in case
+                            self.clear_frame(self.i_results_frame)
+                            self.Plot_Figure(self.i_results_frame, self.inline_display_intensity, 0, 0, (3, 3),"Inline Simulation (Detector POST)")
+                            wg.create_button(self.i_results_frame, "Save Image", 1, 0, command=lambda: self.save_image(self.inline_display_intensity))
+
+                    
+                        self.set_status("Detector post-processing applied (Inline).")
+                        
+                    self.master.after(0, ui)
+
+                if mode == "tl":
+                    if not hasattr(self, "TL_raw_i") or not hasattr(self, "TL_raw_ir"):
+                        self.master.after(0, lambda: messagebox.showwarning("No data", "Run a TL simulation first."))
+                        return
+                    cur_px = float(getattr(self, "TL_raw_px_um", self.TL_detector_pixel_size.get()))
+                    i_out = det.applyDetector(self.TL_raw_i, current_pixel_size=cur_px)
+                    ir_out = det.applyDetector(self.TL_raw_ir, current_pixel_size=cur_px)
+
+                    self.TL_i_display = np.asarray(i_out, dtype=np.float32)
+                    self.TL_ir_display = np.asarray(ir_out, dtype=np.float32)
+                    
+                    def ui():
+                        self.stack_viewer_set_stack(self.TL_canvas_post_obj, self.TL_i_display)
+                        self.stack_viewer_set_stack(self.TL_canvas_post_ref, self.TL_ir_display)
+                        self.set_status("Detector post-processing applied (Inline).")
+                        
+                    self.master.after(0, ui)
+                
+
+            except Exception as e:
+                self.master.after(0, lambda: messagebox.showerror("Error", f"Detector post-processing failed:\n{e}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+
+    def reset_detector_post(self, mode="inline"):
+        if mode == "inline":
+            if not hasattr(self, "inline_raw_intensity"):
+                messagebox.showwarning("No data", "Run an Inline simulation first.")
+                return
+            self.inline_display_intensity = self.inline_raw_intensity.copy()
+
+            self.Plot_Figure(self.inline_post_frame, self.inline_display_intensity, 0, 0, (3, 3), "Post-Processing")
+
+            self.set_status("Reset to RAW (Inline).")
+            return
+        
+        if mode == "tl":
+            if not hasattr(self, "TL_raw_i") or not hasattr(self, "TL_raw_ir"):
+                messagebox.showwarning("No data", "Run a TL simulation first.")
+                return
+
+            self.TL_i_display  = self.TL_raw_i.copy()
+            self.TL_ir_display = self.TL_raw_ir.copy()
+
+            self.stack_viewer_set_stack(self.TL_canvas_post_obj, self.TL_i_display)
+            self.stack_viewer_set_stack(self.TL_canvas_post_ref, self.TL_ir_display)
+            
+            self.set_status("Reset to RAW (TL).")
+
+    def refresh_TL_results_post(self):
+        self.clear_frame(self.TL_results_frame)
+        self.Plot_Modulation_Curve(self.TL_results_frame, self.TL_i_display, self.TL_ir_display, 0, 0, (3,3), "Phase Stepping Curve", columnspan=2)
+        self.Plot_Figure(self.TL_results_frame, self.TL_i_display[0,:,:], 1, 0, (3,3), "One Projection (POST)", columnspan=2)
+        wg.create_button(self.TL_results_frame, "Save Stack Object Images", 2, 0, command=lambda: self.save_stack_image(self.TL_i_display))
+        wg.create_button(self.TL_results_frame, "Save Stack Reference Images", 2, 1, command=lambda: self.save_stack_image(self.TL_ir_display))
+        wg.create_button(self.TL_results_frame, "Send to TLRec", 3, 0, command=lambda: self.send_to_TLREC(self.TL_i_display, self.TL_ir_display))
+        self.set_status("Detector post-processing applied (TL).")
+        
+
+    # Same function as TLRec_gui, maybe should create a custom widget
+    def update_canvas(self, canvas, image):
+
+        width, height = canvas.winfo_width(), canvas.winfo_height()
+        
+        arr = np.asarray(image, dtype=float)
+
+        finite = np.isfinite(arr)
+        if not finite.any():
+            arr = np.zeros_like(arr, dtype=float)
+            vmin, vmax = 0.0, 1.0
+        else:
+            vals = arr[finite]
+            p1, p99 = np.percentile(vals, [1, 99])
+            if p1 == p99:
+                vmin, vmax = vals.min(), vals.max()
+                if vmin == vmax:
+                    vmin, vmax = 0.0, 1.0
+            else:
+                vmin, vmax = p1, p99
+
+        arr_clipped = np.clip(arr, vmin, vmax)
+        norm = (arr_clipped - vmin) / (vmax - vmin + 1e-9)
+        norm = (norm * 255.0).astype(np.uint8)
+
+        image_pil = Image.fromarray(norm)
+        
+        h_img, w_img = norm.shape
+        scale = min(width / w_img, height / h_img)
+        new_w = int(w_img * scale)
+        new_h = int(h_img * scale)
+
+        resized_image = image_pil.resize((new_w, new_h), Image.BILINEAR)
+
+        photo = ImageTk.PhotoImage(resized_image)
+
+        canvas.image = photo
+        canvas.delete("all")
+        
+        x0 = (width  - new_w) // 2
+        y0 = (height - new_h) // 2
+        canvas.create_image(x0, y0, anchor=tk.NW, image=canvas.image)
+        
+    def make_stack_viewer(self, parent, title="Stack"):
+        box = ttk.LabelFrame(parent, text=title, padding=(6, 6))
+        box.grid_rowconfigure(0, weight=1)
+        box.grid_columnconfigure(0, weight=1)
+
+        canvas = tk.Canvas(box, highlightthickness=0, bg="#333333")
+        canvas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+        ctrl = ttk.Frame(box)
+        ctrl.grid(row=1, column=0, sticky="ew", padx=5, pady=(0, 5))
+        ctrl.grid_columnconfigure(1, weight=1)
+
+        lbl = ttk.Label(ctrl, text="Slice: 0")
+        lbl.grid(row=0, column=0, sticky="w")
+
+        slider = ttk.Scale(ctrl, from_=0, to=0, orient="horizontal")
+        slider.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+
+        canvas._stack = None
+        canvas._idx = tk.IntVar(value=0)
+        canvas._lbl = lbl
+        canvas._slider = slider
+
+        def _on_slide(v):
+            i = int(float(v))
+            canvas._idx.set(i)
+            canvas._lbl.config(text=f"Slice: {i}")
+            self.stack_viewer_redraw(canvas)
+
+        slider.configure(command=_on_slide)
+
+        if not getattr(canvas, "_cfg_bound", False):
+            canvas.bind("<Configure>", lambda e: self.stack_viewer_redraw(canvas))
+            canvas._cfg_bound = True
+
+        return box, canvas
+
+    def stack_viewer_set_stack(self, canvas, stack):
+        arr = np.asarray(stack, dtype=np.float32)
+        if arr.ndim == 2:
+            arr = arr[np.newaxis, ...]
+
+        canvas._stack = arr
+        canvas._idx.set(0)
+
+        n = arr.shape[0]
+        canvas._slider.configure(from_=0, to=max(0, n-1))
+        canvas._lbl.config(text="Slice: 0")
+
+        self.stack_viewer_redraw(canvas)
+
+    def stack_viewer_redraw(self, canvas):
+        if getattr(canvas, "_stack", None) is None:
+            return
+        arr = canvas._stack
+        i = int(canvas._idx.get())
+        i = max(0, min(i, arr.shape[0]-1))
+
+        self.update_canvas(canvas, arr[i, :, :])

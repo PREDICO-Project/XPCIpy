@@ -6,7 +6,8 @@ from tqdm import tqdm
 
 #import threading
 
-def Experiment_Inline(n, Geometry, Source, Detector,Objects, padding = 0, progress_cb=None):
+def Experiment_Inline(n, Geometry, Source, Detector,Objects, 
+                      padding = 0, progress_cb=None, return_raw = False, apply_detector = True):
     
     energies = Source.energies
     energy_weights = Source.intensities
@@ -103,11 +104,20 @@ def Experiment_Inline(n, Geometry, Source, Detector,Objects, padding = 0, progre
     # Without zooming: 
     Intensity = Source.PSF_blurr(Intensity, current_pixel_size=px_ref, Magnification=M_source)
 
-    Intensity = Detector.applyDetector(Intensity, current_pixel_size=px_det)
+    Intensity_raw = Intensity
+    if apply_detector:
+        Intensity_det = Detector.applyDetector(Intensity, current_pixel_size=px_det)
+        
+    else:
+        Intensity_det = Intensity_raw
+        
+    if return_raw:
+        return Intensity_det, Intensity_raw
 
-    return Intensity    
+    return Intensity_det    
 
-def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL_CONFIG, padding = 0, progress_cb=None):
+def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL_CONFIG, 
+                              padding = 0, progress_cb=None, return_raw = False, apply_detector = True):
 
     Energies = Source.energies
     energy_weights = Source.intensities
@@ -149,6 +159,9 @@ def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL
  
     images = []
     images_reference = []
+    
+    images_raw = []
+    images_reference_raw = []
 
     total = steps
     
@@ -171,6 +184,7 @@ def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL
             w = energy_weights[ie]
 
             u = np.ones((n, n), dtype=np.complex128)
+            
             z_prev = z_ref
             #px = Geometry.pixel_size_at_distance(px_ref, z_ref, z_prev, conical)# Previous Implementation
 
@@ -191,6 +205,7 @@ def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL
             I_obj += np.abs(u) ** 2 * w
 
             uR = np.ones((n, n), dtype=np.complex128)
+
             z_prev = z_ref
             pxR = Geometry.pixel_size_at_distance(px_ref, z_ref, z_prev, conical)
            
@@ -222,11 +237,18 @@ def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL
         I_obj = Source.PSF_blurr(I_obj, current_pixel_size=px, Magnification=Geometry.calculate_magnification(z_ref, z_det, conical))
         I_ref = Source.PSF_blurr(I_ref, current_pixel_size=pxR, Magnification=Geometry.calculate_magnification(z_ref, z_det, conical))
 
-        #if Detector.Image_option == 'Realistic':
-        print('Applying detector effects')
-        px_det = Geometry.pixel_size_at_distance(px_ref, z_ref, z_det, conical)
-        I_obj = Detector.applyDetector(I_obj, current_pixel_size=px_det)
-        I_ref = Detector.applyDetector(I_ref, current_pixel_size=px_det)
+
+        if return_raw:
+            I_raw = np.asarray(I_obj, dtype=np.float32)
+            Ir_raw = np.asarray(I_ref, dtype=np.float32)
+            images_raw.append(I_raw)
+            images_reference_raw.append(Ir_raw)
+            
+        if apply_detector:
+            print('Applying detector effects')
+            px_det = Geometry.pixel_size_at_distance(px_ref, z_ref, z_det, conical)
+            I_obj = Detector.applyDetector(I_obj, current_pixel_size=px_det)
+            I_ref = Detector.applyDetector(I_ref, current_pixel_size=px_det)
 
         images.append(I_obj)
         images_reference.append(I_ref)
@@ -236,6 +258,11 @@ def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL
 
     images = np.asarray(images)
     images_reference = np.asarray(images_reference)
+    
+    if return_raw:
+        images_raw = np.asarray(images_raw)
+        images_reference_raw = np.asarray(images_reference_raw)
+        return images, images_reference, images_raw, images_reference_raw
     return images, images_reference
 
 def Propagate_Objects(Objects_sorted, Geometry, energy, padding,px_ref, z_ref, conical):
