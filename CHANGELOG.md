@@ -3,6 +3,33 @@
 ## XPCIpy GUI – Change Log
 This document summarizes all approved updates, fixes, and improvements implemented in the Reconstruction (TLRec) and Simulation (PCSim) GUI modules.
 
+## [v. 1.1.1] – Detector Post-Processing & Noise Model Improvements
+
+### Detector Post-Processing (Inline & Talbot-Lau)
+- Added full **post-processing detector model** without rerunning the simulation.
+- Detector effects (PSF, downsampling and noise) can now be applied interactively to:
+  - Inline simulations
+  - Talbot-Lau object and reference stacks
+- Raw (pre-detector) and post-processed images are displayed side-by-side for direct comparison.
+
+### Physically-Meaningful Poisson Noise Model
+- Replaced ad-hoc Poisson noise with a **photon-count–based model**.
+- Introduced a configurable **photon number parameter `N0`**:
+  - Intensity is scaled by `N0`
+  - Poisson noise is applied in photon space
+  - Output is renormalized after detection
+
+### Talbot-Lau Post-Processing Enhancements
+- Detector post-processing now affects **both object and reference stacks**.
+- Stack browsing implemented via slice selection without altering window/level.
+- Fixed layout and resizing issues when displaying multiple images simultaneously.
+
+### Stability & Bug Fixes
+- Fixed UI state bugs where disabled widgets were re-enabled after simulation.
+- Fixed frame resizing issues causing images or colorbars to overflow or hide widgets.
+- Improved thread-safe GUI updates during post-processing operations.
+
+
 ---
 [v. 1.1.0] - Major GUI Refactor & Usability Improvements
 
