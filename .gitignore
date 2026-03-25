@@ -2,6 +2,7 @@ __pycache__/
 
 # Virtual Environment
 venv/
+.venv-docs/
 
 Notebooks/Results/
 Data/
@@ -9,6 +10,10 @@ Output/
 dist/
 build/
 *.egg-info/
+docs/build/
+docs/_build/
+docs/
+.github/
 
 
 # Jupyter Notebook

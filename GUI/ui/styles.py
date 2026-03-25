@@ -19,6 +19,7 @@ class Styles:
         style.configure("Custom.TLabelframe", background="gray20", foreground="white", bordercolor="gray20")
         style.configure("TLabelframe.Label", background="gray20", foreground="white")
         style.configure("TEntry", background="gray35", foreground="black", font=(font_type, font_size))  
+        style.configure("Invalid.TEntry", fieldbackground="#4d0000", foreground="white", font=(font_type, font_size))
         style.configure("TLabelframe", background="gray20", foreground="white", font=(font_type, font_size))
         style.configure("TLabelframe.Label", background="gray20", foreground="white", font=(font_type, font_size))
         style.configure("TButton", background="gray35", foreground="white", font=(font_type, font_size))

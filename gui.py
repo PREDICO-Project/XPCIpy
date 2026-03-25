@@ -42,8 +42,7 @@ def create_main_menu():
             pass
 
 
-    LoadingScreen(root, duration=1800)
-    root.after(1800, show_main_gui)
+    LoadingScreen(root, duration=1800, on_finish=show_main_gui)
 
     def on_close():
         root.quit()

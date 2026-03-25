@@ -105,13 +105,9 @@ def check_limits_DPC(DPC):
   Returns:
       numpy array: Phase Gradient Image
   """
-  (y,x) = DPC.shape
-  for ii in range(y):
-      for jj in range(x):
-          if DPC[ii,jj]>np.pi:
-              DPC[ii,jj] -=2*np.pi
-          if DPC[ii,jj]<-np.pi:
-              DPC[ii,jj] +=2*np.pi
+  DPC = DPC.copy()
+  DPC[DPC > np.pi] -= 2 * np.pi
+  DPC[DPC < -np.pi] += 2 * np.pi
   return DPC
 
 
@@ -155,16 +151,8 @@ def numerical_integration(image, dx):
     Returns:
         numpy array: Integrated Phase.
     """
-    # Function to make the analytical integration along x-direction.
-    (y,x) = image.shape
-    Phase = np.zeros((y,x))
-    for jj in range(y):
-        dphase = 0
-        for ii in range(x):
-            phase = image[jj,ii]*dx
-            dphase += phase
-            Phase[jj,ii] = dphase
-    return Phase
+    # Analytical integration along x-direction.
+    return np.cumsum(image * dx, axis=1)
 
 
 def calculate_sine_parameters(spectrum):

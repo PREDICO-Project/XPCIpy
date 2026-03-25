@@ -16,6 +16,7 @@ class HelpWindow:
         notebook.pack(fill="both", expand=True)
 
         self.tab_sim = ttk.Frame(notebook)
+        self.tab_shortcuts = ttk.Frame(notebook)
         self.tab_rec = ttk.Frame(notebook)
         self.tab_rec_batch = ttk.Frame(notebook)
         self.tab_about = ttk.Frame(notebook)
@@ -23,12 +24,14 @@ class HelpWindow:
         
 
         notebook.add(self.tab_sim, text="Simulation Guide")
+        notebook.add(self.tab_shortcuts, text="Shortcuts")
         notebook.add(self.tab_rec, text="Reconstruction Guide")
         notebook.add(self.tab_rec_batch, text="Batch Reconstruction Guide")
         notebook.add(self.tab_about, text="About")
 
         # Fill content
         self._populate_simulation_guide()
+        self._populate_shortcuts_tab()
         self._populate_reconstruction_guide()
         self._populate_reconstruction_batch()
         self._populate_about_tab()
@@ -97,6 +100,30 @@ class HelpWindow:
         text.insert("end","These tools help verify the quality of the raw data and the reconstruction:\n")
         text.insert("end", " - **Modulation Curve Plot**: Clicking an image displays the Intensity vs. Phase Step graph for that pixel. Use this to diagnose signal quality and noise.\n", "bullet")
         text.insert("end", " - **Window/Level Adjustment**: Adjust the contrast and brightness of the reconstructed image for specific detail visualization.\n", "bullet")
+
+        text.config(state="disabled")
+
+    def _populate_shortcuts_tab(self):
+        text = self._make_text_widget(self.tab_shortcuts)
+
+        text.insert("end", "Keyboard Shortcuts\n", "title")
+        text.insert("end", "Use these shortcuts to speed up common actions in the GUI.\n")
+
+        text.insert("end", "\nGlobal\n", "subtitle")
+        text.insert("end", " - Enter / Numpad Enter / Ctrl+Enter: Run action in the active simulation tab.\n", "bullet")
+        text.insert("end", " - Ctrl+S: Save current result in the active tab.\n", "bullet")
+        text.insert("end", " - Ctrl+Shift+S: Save preset in the active simulation tab.\n", "bullet")
+        text.insert("end", " - F1: Open Help window.\n", "bullet")
+        text.insert("end", " - Ctrl+Q: Exit the application.\n", "bullet")
+
+        text.insert("end", "\nContext by Tab\n", "subtitle")
+        text.insert("end", " - Inline Simulation: Enter runs simulation; Ctrl+S saves post-processed image.\n", "bullet")
+        text.insert("end", " - Check Talbot-Lau effect: Enter runs Talbot carpet; Ctrl+S saves carpet image.\n", "bullet")
+        text.insert("end", " - Talbot Lau Phase Contrast Simulation: Enter runs simulation; Ctrl+S saves object stack.\n", "bullet")
+
+        text.insert("end", "\nNotes\n", "subtitle")
+        text.insert("end", " - Run shortcuts are ignored while a simulation is already running.\n", "bullet")
+        text.insert("end", " - If no result is available, the status bar indicates what to run first.\n", "bullet")
 
         text.config(state="disabled")
         

@@ -12,20 +12,11 @@ except Exception as err:
 def calculate_C_matrix(images):
     if len(images.shape) == 3:
         (z,y,x) = images.shape
-        
+        images_2d = images.reshape(z, -1).astype(np.float64, copy=False)
+        C = images_2d @ images_2d.T
     else:
         z =images.shape[0]
-        x = 0
-        y = 0
-    C = np.zeros((z,z), dtype=np.float64)
-    i = 0
-    for ii in range(0,x,1):
-        for jj in range(0,y,1):
-            I = np.reshape(images[:,jj,ii], (z,1))
-            I_T = np.transpose(I)           
-            C_xy = np.matmul(I,I_T, dtype=np.float64)
-            i +=1
-            C += C_xy      
+        C = np.zeros((z, z), dtype=np.float64)
     C = np.asarray(C)   
     return C
 

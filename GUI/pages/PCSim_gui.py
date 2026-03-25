@@ -109,6 +109,8 @@ class PCSim_gui:
 
         self.initialize_vars()
         self.create_tabs()
+        self._ui_busy = False
+        self.configure_shortcuts()
         
     def close_app(self):
         self.master.quit()
@@ -123,6 +125,83 @@ class PCSim_gui:
 
     def open_cite_window(self):
         CiteWindow(self.master)
+
+    def configure_shortcuts(self):
+        # Global QoL shortcuts
+        self.master.bind_all("<Return>", self._on_shortcut_run)
+        self.master.bind_all("<KP_Enter>", self._on_shortcut_run)
+        self.master.bind_all("<Control-Return>", self._on_shortcut_run)
+        self.master.bind_all("<Control-s>", self._on_shortcut_save)
+        self.master.bind_all("<Control-S>", self._on_shortcut_save)
+        self.master.bind_all("<Control-Shift-S>", self._on_shortcut_save_preset)
+        self.master.bind_all("<F1>", self._on_shortcut_help)
+        self.master.bind_all("<Control-q>", self._on_shortcut_exit)
+        self.master.bind_all("<Control-Q>", self._on_shortcut_exit)
+
+    def _active_tab_widget(self):
+        try:
+            tab_id = self.tab_container.select()
+            return self.master.nametowidget(tab_id)
+        except Exception:
+            return None
+
+    def _on_shortcut_run(self, _event=None):
+        if self._ui_busy:
+            return "break"
+
+        active = self._active_tab_widget()
+        if active is self.inline_tab:
+            self.RunInline()
+        elif active is self.check_TL_tab:
+            self.RunCheckTL()
+        elif active is self.TL_tab:
+            self.RunTL()
+        else:
+            self.set_status("No run action available for this tab.")
+        return "break"
+
+    def _on_shortcut_save(self, _event=None):
+        active = self._active_tab_widget()
+
+        if active is self.inline_tab:
+            if hasattr(self, "inline_display_intensity"):
+                self.save_image(self.inline_display_intensity)
+            else:
+                self.set_status("Run Inline simulation first to save an image.")
+        elif active is self.check_TL_tab:
+            if hasattr(self, "check_tl_intensities"):
+                self.save_image(self.check_tl_intensities)
+            else:
+                self.set_status("Run Check Talbot-Lau first to save an image.")
+        elif active is self.TL_tab:
+            if hasattr(self, "TL_i_display"):
+                self.save_stack_image(self.TL_i_display)
+            else:
+                self.set_status("Run TL simulation first to save images.")
+        else:
+            self.set_status("No save action available for this tab.")
+
+        return "break"
+
+    def _on_shortcut_save_preset(self, _event=None):
+        active = self._active_tab_widget()
+
+        if active is self.inline_tab:
+            self.save_preset_Inline()
+        elif active is self.TL_tab:
+            self.save_preset_TL()
+        else:
+            self.set_status("No preset save action for this tab.")
+
+        return "break"
+
+    def _on_shortcut_help(self, _event=None):
+        self.open_help_window()
+        return "break"
+
+    def _on_shortcut_exit(self, _event=None):
+        self.close_app()
+        return "break"
         
     def create_tabs(self):
         # Create a Frame for each tab
@@ -194,19 +273,19 @@ class PCSim_gui:
 
         self.initialize_Figure(self.i_results_frame, (3,3), 0,0)
 
-        nLabel, _ = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.i_n,padx = 20)
-        pxLabel, _ = wg.create_label_entry(parameters_frame, 'Pixel size (micrometer)', 1, 0,textvariable=self.i_pixel_size,padx = 20)
-        DODLabel,_ = wg.create_label_entry(parameters_frame, 'Distance Object Detector (cm)', 2, 0,textvariable=self.i_DOD,padx = 20)
-        self.DSOLabel,_ = wg.create_label_entry(parameters_frame, 'Distance Source-Object (cm)', 3, 0,textvariable=self.i_DSO,padx = 20)
-        self.FWHMSouLabel,_ = wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 4, 0,textvariable=self.i_FWHM_source,padx = 20)
+        nLabel, i_n_e = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.i_n,padx = 20)
+        pxLabel, i_px_e = wg.create_label_entry(parameters_frame, 'Pixel size (micrometer)', 1, 0,textvariable=self.i_pixel_size,padx = 20)
+        DODLabel, i_dod_e = wg.create_label_entry(parameters_frame, 'Distance Object Detector (cm)', 2, 0,textvariable=self.i_DOD,padx = 20)
+        self.DSOLabel, i_dso_e = wg.create_label_entry(parameters_frame, 'Distance Source-Object (cm)', 3, 0,textvariable=self.i_DSO,padx = 20)
+        self.FWHMSouLabel, i_fwhm_src_e = wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 4, 0,textvariable=self.i_FWHM_source,padx = 20)
         self.BeamShapeLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Beam Shape',row = 5 ,column =0, textvariable = self.i_Beam_Shape, names = Beam_Shape_OPTIONS)
         self.BeamSpectrumLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Spectrum',row = 6 ,column =0, textvariable = self.i_Beam_Spectrum,names = Beam_Spectrum_OPTIONS)
-        self.BeamEnergyL,_ = wg.create_label_entry(parameters_frame, 'Energy (keV, necessary to initialize the variable)', row=7, column=0, textvariable=self.i_beam_energy, padx = 20)
+        self.BeamEnergyL, i_energy_e = wg.create_label_entry(parameters_frame, 'Energy (keV, necessary to initialize the variable)', row=7, column=0, textvariable=self.i_beam_energy, padx = 20)
         self.ObjectLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Object',row = 8 ,column =0, textvariable = self.i_Object,names = Object_OPTIONS)
         wg.create_button(parameters_frame, 'Set Object Parameters', 9, 0, command = self.open_params)
         self.DetectorL,_ = wg.create_label_combobox(parameters_frame, label_text='Image',row = 10 ,column =0, textvariable = self.i_image_option,names = Image_OPTIONS)
-        self.PixelDetectorL,_ = wg.create_label_entry(parameters_frame, 'Detector Pixel Size (microns)', 11, 0,textvariable=self.i_detector_pixel_size,padx = 20)
-        self.ResolutionL,_ = wg.create_label_entry(parameters_frame, 'Detector Resolution (FWHM microns)', 12, 0,textvariable=self.i_FWHM_detector,padx = 20)
+        self.PixelDetectorL, i_pxdet_e = wg.create_label_entry(parameters_frame, 'Detector Pixel Size (microns)', 11, 0,textvariable=self.i_detector_pixel_size,padx = 20)
+        self.ResolutionL, i_fwhm_det_e = wg.create_label_entry(parameters_frame, 'Detector Resolution (FWHM microns)', 12, 0,textvariable=self.i_FWHM_detector,padx = 20)
         #self.zip_checkbox_inline = wg.create_checkbox(parameters_frame, text="Create ZIP with simulation data", row=13, column=0, variable=self.i_zip_var, sticky="w")
         ToggleButton(parameters_frame, text="Create ZIP with simulation data", variable=self.i_zip_var).grid(row=13, column=0, pady=5)
         self.RunButton = wg.create_button(parameters_frame, 'Run', 14,0,command = self.RunInline)
@@ -219,8 +298,17 @@ class PCSim_gui:
         ExitButton = wg.create_button(parameters_frame, "Exit", 16, 0, padx = 60, command=self.close_app)
         
         
+        self._watch(i_n_e, self.i_n, lambda v: v > 0)
+        self._watch(i_px_e, self.i_pixel_size, lambda v: v > 0)
+        self._watch(i_dod_e, self.i_DOD, lambda v: v > 0)
+        self._watch(i_dso_e, self.i_DSO, lambda v: v > 0)
+        self._watch(i_fwhm_src_e, self.i_FWHM_source, lambda v: v > 0)
+        self._watch(i_energy_e, self.i_beam_energy, lambda v: v > 0)
+        self._watch(i_pxdet_e, self.i_detector_pixel_size, lambda v: v > 0)
+        self._watch(i_fwhm_det_e, self.i_FWHM_detector, lambda v: v > 0)
         self.add_tooltip(nLabel, "Number of pixels of the simulated wavefront (n x n).")
         self.add_tooltip(pxLabel, "Pixel size of the wavefront grid in micrometers.")
+        self.add_tooltip(DODLabel, "Distance from the object to the detector in centimeters.")
         self.add_tooltip(self.BeamShapeLabel, "Beam geometry: 'Plane' = parallel beam, 'Conical' = diverging cone.")
         self.add_tooltip(self.BeamSpectrumLabel, "Select a spectrum file or 'Monoenergetic' for a single energy.")
         self.add_tooltip(self.DSOLabel, "Distance from the source to the object in centimeters.")
@@ -253,17 +341,17 @@ class PCSim_gui:
 
         self.initialize_Figure(self.c_results_frame, (3,3), 0,0)
 
-        nLabel, _ = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.c_n,padx = 20)
-        pxLabel, _ = wg.create_label_entry(parameters_frame, 'Pixel size (micrometer)', 1, 0,textvariable=self.c_pixel_size,padx = 20)
-        FWHMSouLabel,_ = wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 2, 0,textvariable=self.c_FWHM_source,padx = 20)
-        EnergyL,_ = wg.create_label_entry(parameters_frame, 'DEsign Energy (keV)', 3, 0,textvariable=self.c_energy,padx = 20)
-        PeriodL,_ = wg.create_label_entry(parameters_frame, 'Grating Period (microns)', 4, 0,textvariable=self.c_period,padx = 20)
-        DCL,_ = wg.create_label_entry(parameters_frame, 'Duty Cycle', 5, 0,textvariable=self.c_DC,padx = 20)
+        nLabel, c_n_e = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.c_n,padx = 20)
+        pxLabel, c_px_e = wg.create_label_entry(parameters_frame, 'Pixel size (micrometer)', 1, 0,textvariable=self.c_pixel_size,padx = 20)
+        FWHMSouLabel, c_fwhm_src_e = wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 2, 0,textvariable=self.c_FWHM_source,padx = 20)
+        EnergyL, c_energy_e = wg.create_label_entry(parameters_frame, 'DEsign Energy (keV)', 3, 0,textvariable=self.c_energy,padx = 20)
+        PeriodL, c_period_e = wg.create_label_entry(parameters_frame, 'Grating Period (microns)', 4, 0,textvariable=self.c_period,padx = 20)
+        DCL, c_dc_e = wg.create_label_entry(parameters_frame, 'Duty Cycle', 5, 0,textvariable=self.c_DC,padx = 20)
         materialL,_ = wg.create_label_entry(parameters_frame, 'Material (just used for custom grating)', 6, 0,textvariable=self.c_material,padx = 20)
-        barHeightL,_ = wg.create_label_entry(parameters_frame, 'Bar height (micrometer, just for custom grating)', 7, 0,textvariable=self.c_bar_height,padx = 20)
+        barHeightL, c_barheight_e = wg.create_label_entry(parameters_frame, 'Bar height (micrometer, just for custom grating)', 7, 0,textvariable=self.c_bar_height,padx = 20)
         gratigL,_ = wg.create_label_combobox(parameters_frame, label_text='Grating Type',row = 8 ,column =0, textvariable = self.c_grating_def, names = Grating_OPTIONS)
-        multiplesL,_ = wg.create_label_entry(parameters_frame, 'Multiples of Talbot distance to be represented', row=9, column=0, textvariable=self.c_multiple, padx = 20)
-        iterationsL,_ = wg.create_label_entry(parameters_frame, 'Number of calculations performed', row=10, column=0, textvariable=self.c_iterations, padx = 20)
+        multiplesL, c_multiples_e = wg.create_label_entry(parameters_frame, 'Multiples of Talbot distance to be represented', row=9, column=0, textvariable=self.c_multiple, padx = 20)
+        iterationsL, c_iter_e = wg.create_label_entry(parameters_frame, 'Number of calculations performed', row=10, column=0, textvariable=self.c_iterations, padx = 20)
         TLDist,_ = wg.create_label_entry(parameters_frame, 'Talbot Distance (cm)', 11, 0,textvariable=self.c_Talbot_distance,padx = 20, state='disable')
         #iterationsL,_ = wg.create_label_combobox(parameters_frame, label_text='Image',row = 8 ,column =0, textvariable = self.c_image_option,names = Image_OPTIONS)
         #self.ResolutionL,_ = wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 9, 0,textvariable=self.c_resolution,padx = 20)
@@ -271,6 +359,15 @@ class PCSim_gui:
 
         ExitButton = wg.create_button(parameters_frame, "Exit", 13, 0, padx = 60, command=self.close_app)
         
+        self._watch(c_n_e, self.c_n, lambda v: v > 0)
+        self._watch(c_px_e, self.c_pixel_size, lambda v: v > 0)
+        self._watch(c_fwhm_src_e, self.c_FWHM_source, lambda v: v > 0)
+        self._watch(c_energy_e, self.c_energy, lambda v: v > 0)
+        self._watch(c_period_e, self.c_period, lambda v: v > 0)
+        self._watch(c_dc_e, self.c_DC, lambda v: 0 < v <= 1)
+        self._watch(c_barheight_e, self.c_bar_height, lambda v: self.c_grating_def.get() != "Custom" or v > 0)
+        self._watch(c_multiples_e, self.c_multiple, lambda v: v > 0)
+        self._watch(c_iter_e, self.c_iterations, lambda v: v > 0)
         self.add_tooltip(nLabel, "Number of pixels of the simulated wavefront (n x n).")
         self.add_tooltip(pxLabel, "Pixel size of the wavefront grid in micrometers.")
         self.add_tooltip(FWHMSouLabel, "Full Width at Half Maximum (FWHM) of the source in micrometers.")
@@ -283,6 +380,22 @@ class PCSim_gui:
         self.add_tooltip(multiplesL, "Multiple of Talbot distance (maximum distance).")
         self.add_tooltip(iterationsL, "Number of distances calculated.")
         self.add_tooltip(self.RunButton, "Start the Talbot-Lau effect check simulation with the specified parameters.")
+
+        # Auto-update Talbot distance as the user types
+        def _auto_update_checkTL(*_args):
+            try:
+                self.modify_TL_dist(None)
+            except Exception:
+                pass
+
+        for _var in (self.c_energy, self.c_period, self.c_grating_def):
+            try:
+                _var.trace_add("write", _auto_update_checkTL)
+            except Exception:
+                pass
+
+        self.modify_TL_dist(None)
+
         # Add informational text box
         font = {'family': 'serif',
         'color':  'lightgray',
@@ -327,29 +440,29 @@ class PCSim_gui:
 
         self.initialize_Figure(self.TL_results_frame, (5,5), 0,0)
         
-        nLabel, _ = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.TL_n,padx = 20)
-        pxLabel, _ = wg.create_label_entry(parameters_frame, 'Pixel size (microns)', 1, 0,textvariable=self.TL_pixel_size,padx = 20)
-        sourceLabel,_ = wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 2, 0,textvariable=self.TL_FWHM_source,padx = 20)
+        nLabel, tl_n_e = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.TL_n,padx = 20)
+        pxLabel, tl_px_e = wg.create_label_entry(parameters_frame, 'Pixel size (microns)', 1, 0,textvariable=self.TL_pixel_size,padx = 20)
+        sourceLabel, tl_fwhm_src_e = wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 2, 0,textvariable=self.TL_FWHM_source,padx = 20)
         beamShapeLabel, _ = wg.create_label_combobox(parameters_frame, label_text='Beam Shape',row = 3 ,column =0, textvariable = self.TL_BeamShape, names = Beam_Shape_OPTIONS)
         spectrumLabel, _ =wg.create_label_combobox(parameters_frame, label_text='Spectrum',row = 4 ,column =0, textvariable = self.TL_Beam_Spectrum,names = Beam_Spectrum_OPTIONS)
-        energyLabel,_ = wg.create_label_entry(parameters_frame, 'Design Energy (keV)', row=5, column=0, textvariable=self.TL_beam_energy, padx = 20)
-        DSG1Label,_ = wg.create_label_entry(parameters_frame, 'Distance Source-G1 (cm)', 6, 0,textvariable=self.TL_DSO,padx = 20)
-        DOG1Label,_ = wg.create_label_entry(parameters_frame, 'Distance Object-G1 (cm)', 7, 0,textvariable=self.TL_DOG1,padx = 20)
-        multiplesLabel,_ =wg.create_label_entry(parameters_frame, 'Multiple of Talbot distance', 8, 0,textvariable=self.TL_TLmultiple,padx = 20)
+        energyLabel, tl_energy_e = wg.create_label_entry(parameters_frame, 'Design Energy (keV)', row=5, column=0, textvariable=self.TL_beam_energy, padx = 20)
+        DSG1Label, tl_dsg1_e = wg.create_label_entry(parameters_frame, 'Distance Source-G1 (cm)', 6, 0,textvariable=self.TL_DSO,padx = 20)
+        DOG1Label, tl_dog1_e = wg.create_label_entry(parameters_frame, 'Distance Object-G1 (cm)', 7, 0,textvariable=self.TL_DOG1,padx = 20)
+        multiplesLabel, tl_multiples_e = wg.create_label_entry(parameters_frame, 'Multiple of Talbot distance', 8, 0,textvariable=self.TL_TLmultiple,padx = 20)
         TalbotDistanceLabel,_ = wg.create_label_entry(parameters_frame, 'Talbot Distance (cm)', 9, 0,textvariable=self.TL_Talbot_distance,padx = 20, state='disable')
         Magnification,_ = wg.create_label_entry(parameters_frame, 'Magnification', 10, 0,textvariable=self.TL_M,padx = 20, state='disable')
         DG1G1Label,_ = wg.create_label_entry(parameters_frame, 'Distance G1-G2 (cm)', 11, 0,textvariable=self.TL_DOD,padx = 20, state='disable')
-        G1PeriodLabel,_ = wg.create_label_entry(parameters_frame, 'G1 Period (microns)', 12, 0,textvariable=self.TL_Period_G1,padx = 20)
+        G1PeriodLabel, tl_g1period_e = wg.create_label_entry(parameters_frame, 'G1 Period (microns)', 12, 0,textvariable=self.TL_Period_G1,padx = 20)
         G2PeriodLabel,_ = wg.create_label_entry(parameters_frame, 'G2 Period (microns)', 13, 0,textvariable=self.TL_Period_G2,padx = 20, state = 'disable')
         G1PhaseLabel,_ = wg.create_label_combobox(parameters_frame, label_text='G1 Phase',row = 14 ,column =0, textvariable = self.TL_G1_Phase,names = Grating_OPTIONS)
         MovableLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Movable Grating',row = 15 ,column =0, textvariable = self.TL_MovableGrating, names = Movable_OPTIONS)
-        NumberStepsLabel,_ = wg.create_label_entry(parameters_frame, 'Number of steps (int)', 16, 0,textvariable=self.TL_steps,padx = 20)
-        StepLenghtLabel,_ = wg.create_label_entry(parameters_frame, 'Step Length (microns)', 17, 0,textvariable=self.TL_step_length,padx = 20)
+        NumberStepsLabel, tl_steps_e = wg.create_label_entry(parameters_frame, 'Number of steps (int)', 16, 0,textvariable=self.TL_steps,padx = 20)
+        StepLenghtLabel, tl_steplength_e = wg.create_label_entry(parameters_frame, 'Step Length (microns)', 17, 0,textvariable=self.TL_step_length,padx = 20)
         ObjectLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Object',row = 18 ,column =0, textvariable = self.TL_Object,names = Object_OPTIONS)
         wg.create_button(parameters_frame, 'Set Object Parameters', 19, 0, command = self.open_params_TL)
         ImageOptionLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Image',row = 20 ,column =0, textvariable = self.TL_image_option,names = Image_OPTIONS)
-        DetectorPXLabel,_ = wg.create_label_entry(parameters_frame, 'Detector Pixel Size (microns)', 21, 0,textvariable=self.TL_detector_pixel_size,padx = 20)
-        DetectorResolutionLabel,_ =wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 22, 0,textvariable=self.TL_resolution,padx = 20)
+        DetectorPXLabel, tl_pxdet_e = wg.create_label_entry(parameters_frame, 'Detector Pixel Size (microns)', 21, 0,textvariable=self.TL_detector_pixel_size,padx = 20)
+        DetectorResolutionLabel, tl_res_e = wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 22, 0,textvariable=self.TL_resolution,padx = 20)
         ToggleButton(parameters_frame, text="Create ZIP with simulation data", variable=self.TL_zip_var).grid(row=23, column=0, pady=5)
         
         RunBtton = wg.create_button(parameters_frame, 'Run', 24,0,command = self.RunTL)
@@ -361,14 +474,32 @@ class PCSim_gui:
         
         self.add_detector_post_panel(parameters_frame, mode="tl", row=27)
         
+        self._watch(tl_n_e, self.TL_n, lambda v: v > 0)
+        self._watch(tl_px_e, self.TL_pixel_size, lambda v: v > 0)
+        self._watch(tl_fwhm_src_e, self.TL_FWHM_source, lambda v: v > 0)
+        self._watch(tl_energy_e, self.TL_beam_energy, lambda v: v > 0)
+        self._watch(tl_dsg1_e, self.TL_DSO, lambda v: v > 0)
+        self._watch(tl_dog1_e, self.TL_DOG1, lambda v: v > 0)
+        self._watch(tl_multiples_e, self.TL_TLmultiple, lambda v: v > 0)
+        self._watch(tl_g1period_e, self.TL_Period_G1, lambda v: v > 0)
+        self._watch(tl_steps_e, self.TL_steps, lambda v: v > 0)
+        self._watch(tl_steplength_e, self.TL_step_length, lambda v: v > 0)
+        self._watch(tl_pxdet_e, self.TL_detector_pixel_size, lambda v: v > 0)
+        self._watch(tl_res_e, self.TL_resolution, lambda v: v > 0)
         self.add_tooltip(nLabel, "Number of pixels of the simulated wavefront (n x n).")
         self.add_tooltip(pxLabel, "Pixel size of the wavefront grid in micrometers.")
+        self.add_tooltip(sourceLabel, "Full Width at Half Maximum (FWHM) of the X-ray source in micrometers.")
         self.add_tooltip(beamShapeLabel, "Beam geometry: 'Plane' = parallel beam, 'Conical' = diverging cone.")
         self.add_tooltip(spectrumLabel, "Select a spectrum file or 'Monoenergetic' for a single energy.")
+        self.add_tooltip(energyLabel, "Design energy of the setup in keV. Used for Talbot distance calculation.")
         self.add_tooltip(DSG1Label, "Distance from the source to the first grating (G1) in centimeters.")
         self.add_tooltip(DOG1Label, "Distance from the object to the first grating (G1) in centimeters.")
         self.add_tooltip(multiplesLabel, "Multiple of Talbot distance (maximum distance).")
+        self.add_tooltip(TalbotDistanceLabel, "Talbot distance (auto-calculated from energy and G1 period). Read-only.")
+        self.add_tooltip(Magnification, "Geometric magnification factor (auto-calculated from source-to-G1 distance). Read-only.")
+        self.add_tooltip(DG1G1Label, "Distance between G1 and G2 gratings in centimeters (auto-calculated). Read-only.")
         self.add_tooltip(G1PeriodLabel, "Period of the first grating (G1) in micrometers.")
+        self.add_tooltip(G2PeriodLabel, "Period of the second grating (G2) in micrometers (auto-calculated from G1 period and magnification). Read-only.")
         self.add_tooltip(G1PhaseLabel, "Phase shift introduced by the first grating (G1).")
         self.add_tooltip(MovableLabel, "Select which grating (G1 or G2) will be moved during the phase stepping simulation.")
         self.add_tooltip(NumberStepsLabel, "Number of discrete steps in the phase stepping process.")
@@ -727,6 +858,7 @@ class PCSim_gui:
 
             
             Intensities= check_Talbot.Talbot_carpet(n, MySource, Period, DC, multiples, iterations, grating_type,pixel_size, Energy, material=Material, grating_height= bar_height)
+            self.check_tl_intensities = np.asarray(Intensities, dtype=np.float32)
             def update_gui():
                 self.clear_frame(self.c_results_frame)
                 self.Plot_check_TL(self.c_results_frame, Intensities, 0, 0, (3,3), title, multiples, n)
@@ -978,7 +1110,7 @@ class PCSim_gui:
         self.TL_DOD.set(distance)
         self.TL_M.set(M)
 
-    def modify_TL_dist(self, event):
+    def modify_TL_dist(self, event=None):
         
         Period_G1 = self.c_period.get()
 
@@ -1237,7 +1369,6 @@ class PCSim_gui:
             "energy": self.i_beam_energy.get(),
             "DSO": self.i_DSO.get(),
             "DOD": self.i_DOD.get(),
-            "Period_G1": self.TL_Period_G1.get(),
             "Object": self.i_Object.get(),
             "radius": self.i_radius.get(),
             "material": self.i_material.get(),
@@ -1544,6 +1675,7 @@ class PCSim_gui:
         busy = True  -> disable
         busy = False -> normal
         """
+        self._ui_busy = bool(busy)
         state = "disabled" if busy else "normal"
         
         INTERACTIVE_TYPES = (
@@ -1852,7 +1984,6 @@ class PCSim_gui:
         return True
     
     def verify_physical_values_checkTL(self):
-        
         n = self.c_n.get()
         pixel_size = self.c_pixel_size.get() #um
         FWHM_source = self.c_FWHM_source.get()
@@ -1862,7 +1993,7 @@ class PCSim_gui:
         bar_height = self.c_bar_height.get()
         multiples = self.c_multiple.get()
         iterations = self.c_iterations.get()
-        grating_opt = self.c_grating_option.get()
+        grating_opt = self.c_grating_def.get()
         
         if n <=0:
             messagebox.showerror("Invalid Parameters", "Please ensure that Number of Pixels is a positive value.")
@@ -1894,6 +2025,18 @@ class PCSim_gui:
             return False
         return True
     
+    def _watch(self, entry_widget, tk_var, condition):
+        """Real-time entry validation: marks the entry red when condition(value) is False."""
+        def _check(*_):
+            try:
+                val = tk_var.get()
+                valid = bool(condition(val))
+            except (tk.TclError, ValueError):
+                valid = False
+            entry_widget.configure(style="Invalid.TEntry" if not valid else "TEntry")
+        tk_var.trace_add("write", _check)
+        _check()
+
     def add_tooltip(self, widget, text):
         ToolTip(widget, text)
         
