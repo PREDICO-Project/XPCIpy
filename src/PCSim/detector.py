@@ -103,28 +103,27 @@ class Detector():
         """
         if self.noise_type is None:
             return image
-        
-        if self.noise_type.lower() == "poisson":
-            if self.N0 > 0:
-                counts = image * self.N0
-                
-                counts = counts * self.QE
-                
-                rng = np.random.default_rng()
-                counts = rng.poisson(np.clip(counts, 0, None))
 
-                out = counts / (self.N0 * self.QE)
-                return out
-        
-        # Gaussian noise
-        if self.noise_type.lower() == "gaussian":
-            if self.gaussian_sigma <= 0:
-                return image
-            rng = np.random.default_rng()
-            return image + rng.normal(0.0, self.gaussian_sigma, size=image.shape)
-            
-        else:
+        noise = self.noise_type.lower()
+
+        if noise not in ("poisson", "gaussian"):
             raise ValueError("Unknown noise_type. Use 'gaussian', 'poisson', or None.")
+
+        if noise == "poisson":
+            if self.N0 <= 0:
+                raise ValueError("N0 must be greater than 0 for Poisson noise.")
+            if self.QE <= 0:
+                raise ValueError("QE must be greater than 0 for Poisson noise.")
+            counts = image * self.N0 * self.QE
+            rng = np.random.default_rng()
+            counts = rng.poisson(np.clip(counts, 0, None))
+            return counts / (self.N0 * self.QE)
+
+        # Gaussian noise
+        if self.gaussian_sigma <= 0:
+            return image
+        rng = np.random.default_rng()
+        return image + rng.normal(0.0, self.gaussian_sigma, size=image.shape)
 
     def downsample_image(self, image, current_pixel_size=None):
         """
