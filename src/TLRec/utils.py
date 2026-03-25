@@ -87,6 +87,9 @@ def check_limits_DPC(DPC):
     Returns:
         numpy array: Phase Gradient Image
     """
+    
+    #DPC = (DPC + np.pi) % (2*np.pi) - np.pi # Equivalent but faster, more pythonic way
+    
     (y,x) = DPC.shape
     for ii in range(y):
         for jj in range(x):
@@ -94,6 +97,7 @@ def check_limits_DPC(DPC):
                 DPC[ii,jj] -=2*np.pi
             if DPC[ii,jj]<-np.pi:
                 DPC[ii,jj] +=2*np.pi
+    
     return DPC
 
 def read_Tiff_file(name):
@@ -249,13 +253,18 @@ def calculate_phase(a,b):
       numpy array: Angle of the complex number
   """
   (y,x) = b.shape
+  
+  #phase = np.arctan2(a, b) # Equivalent but faster
+  
+  
   phase = np.arctan(a/b)
   for ii in range(y):
     for jj  in range(x):
       if (b[ii,jj]<0) and (a[ii,jj]>0): 
         phase[ii,jj] =phase[ii,jj]+np.pi 
       if (b[ii,jj]<0) and (a[ii,jj]<0):
-        phase[ii,jj] =phase[ii,jj]-np.pi  
+        phase[ii,jj] =phase[ii,jj]-np.pi
+  
   return phase
 
 
@@ -264,21 +273,6 @@ def fill_zero_values(image):
   for indice in indices:
     image[indice[0],indice[1], indice[2]] = (image[indice[0],indice[1], indice[2]+1] + image[indice[0],indice[1], indice[2]-1])/2   
   return image
-
-def apply_FF_DF_correction(images, FF_image, DF_image):
-  """
-  Function to perform the Flat Field and Dark Field corrections. 
-
-  Args:
-      images (numpy array): Images to be corrected
-      FF_image (numpy array): Flat Field Image
-      DF_image (numpy array): Dark Field Image
-
-  Returns:
-      numpy array: Corrected Images
-  """
-  images_corrected = (images - DF_image)/(FF_image - DF_image)
-  return images_corrected
 
 def Apply_Phase_Wiener_filter(DPC, x_pixel_size, y_pixel_size, v0, n, s):
   """

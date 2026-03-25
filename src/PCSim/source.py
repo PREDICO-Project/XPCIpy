@@ -3,7 +3,7 @@ from pathlib import Path
 
 class Source():
     
-    def __init__(self, FWHM, Spectrum, energy, Beam_distribution, pixel_size):
+    def __init__(self, FWHM, Spectrum, energy, Beam_distribution, pixel_size, N0=1e5):
         self.width = FWHM[0] # x-FWHM (microns)
         self.height = FWHM[1] # y-FWHM (microns)
         self.Spectrum = Spectrum 
@@ -11,6 +11,7 @@ class Source():
         self.mean_energy, self.energies, self.intensities = self.obtain_energies()
         self.Beam_distribution = Beam_distribution # Plane or Conical
         self.pixel_size = pixel_size
+        self.N0 = N0 ## Number of photons per pixel emmited
         
 
     def import_spectrum(self):

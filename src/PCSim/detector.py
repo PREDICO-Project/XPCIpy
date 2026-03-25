@@ -4,13 +4,15 @@ from scipy.ndimage import zoom, gaussian_filter
 
 # TODO: Finish the detector response 
 class Detector():
-    def __init__(self, Image_option, pixel_size_detector, FWHM_detector, noise_type, pixel_size, gaussian_sigma=0.0):
+    def __init__(self, Image_option, pixel_size_detector, FWHM_detector, noise_type, pixel_size, gaussian_sigma=0.0, N0 = 1e5, QE =1.0):
         self.Image_option = Image_option # "Ideal" or "Realistic"
         self.pixel_size_detector = float(pixel_size) if pixel_size_detector is None else float(pixel_size_detector) # microns, µm
         self.FWHM_detector = FWHM_detector # microns,µm
         self.noise_type = noise_type # "poisson", "gaussian", or None
         self.pixel_size = pixel_size #microns per pixel of the input grid
         self.gaussian_sigma = gaussian_sigma # Standard deviation for Gaussian noise
+        self.N0 = N0 # Number of photons per pixel
+        self.QE = QE # Future Quantum efficiency
 
     def PSF(self, height, width, current_pixel_size=None):
         """
@@ -101,17 +103,25 @@ class Detector():
         """
         if self.noise_type is None:
             return image
+        
+        if self.noise_type.lower() == "poisson":
+            if self.N0 > 0:
+                counts = image * self.N0
+                
+                counts = counts * self.QE
+                
+                rng = np.random.default_rng()
+                counts = rng.poisson(np.clip(counts, 0, None))
 
-        rng = np.random.default_rng()
+                out = counts / (self.N0 * self.QE)
+                return out
+        
         # Gaussian noise
         if self.noise_type.lower() == "gaussian":
             if self.gaussian_sigma <= 0:
                 return image
+            rng = np.random.default_rng()
             return image + rng.normal(0.0, self.gaussian_sigma, size=image.shape)
-        # Poisson noise
-        elif self.noise_type.lower() == "poisson":
-            img_clipped = np.clip(image, 0, None)
-            return rng.poisson(img_clipped).astype(float)
             
         else:
             raise ValueError("Unknown noise_type. Use 'gaussian', 'poisson', or None.")

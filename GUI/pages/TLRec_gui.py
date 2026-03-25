@@ -21,6 +21,7 @@ import time
 import threading
 from tkinterdnd2 import DND_FILES, TkinterDnD
 from GUI.ui.widgets import DropZone
+from GUI.ui.tooltips import ToolTip
 
 
 
@@ -173,6 +174,9 @@ class TLRec_GUI:
         
         self.CompareButton = wg.create_button(self.frame_coords, 'Update Modulation Curve', 2, 0, padx = 60, state = 'disable',command = lambda: self.Compare_Fit(self.images, self.images_reference, 
         int(self.X_position.get()),int(self.Y_position.get()), rec_type=self.Algorithm_ComboBox))
+        ToolTip(self.XLabel, "X pixel coordinate selected on the image for the modulation curve.")
+        ToolTip(self.YLabel, "Y pixel coordinate selected on the image for the modulation curve.")
+        ToolTip(self.CompareButton, "Update the modulation curve plot for the selected (x, y) pixel position.")
 
     def generate_load_files_frame(self):
         main_frame = ttk.Frame(self.master, style='TFrame')
@@ -219,6 +223,9 @@ class TLRec_GUI:
         Modify_configButton = wg.create_button(main_frame, 'Modify Default Parameters', 3, 0, padx = 60, command = self.Open_config_params)
         
         ExitButton = wg.create_button(main_frame, "Exit", 4, 0, padx = 60, command=self.master.quit)
+        ToolTip(self.Algorithm_ComboBoxLabel, "Phase retrieval algorithm used to reconstruct differential phase, absorption and scatter images.")
+        ToolTip(self.RetrieveButton, "Run the selected phase retrieval algorithm on the loaded object and reference stacks.")
+        ToolTip(Modify_configButton, "Open a window to modify and save the default setup parameters (grating periods, distances, filter settings).")
 
     # Not Used Now
     def UploadReference(self):
@@ -524,6 +531,31 @@ class TLRec_GUI:
                     self.set_status(f"{meta['label']}  x={x}, y={y}, value={val:.3g}")
                 break
 
+    def save_all_results(self, dpc, phase, transmission, dark_field):
+        """Save all four reconstruction images as float32 TIFFs plus a JSON config."""
+        folder = filedialog.askdirectory(title="Choose folder to save results")
+        if not folder:
+            return
+        mapping = {
+            "phase_gradient.tif": dpc,
+            "integrated_phase.tif": phase,
+            "transmission.tif": transmission,
+            "dark_field.tif": dark_field,
+        }
+        for fname, arr in mapping.items():
+            tifffile.imwrite(os.path.join(folder, fname), arr.astype("float32"))
+        cfg = {
+            "G2_period_um": self.G2Period_default.get(),
+            "DSG1_mm": self.DSG1_Default.get(),
+            "DG1G2_mm": self.DG1G2_Default.get(),
+            "DOG1_mm": self.DOG1_Default.get(),
+            "energy_keV": self.Energy_Default.get(),
+            "pixel_size_um": self.pixel_size.get(),
+        }
+        with open(os.path.join(folder, "reconstruction_config.json"), "w") as fh:
+            json.dump(cfg, fh, indent=2)
+        self.set_status(f"All results saved to {folder}")
+
     def save_image(self, data):
       files = [('All Files', '*.*'), 
                 ('Python Files', '*.py'),
@@ -568,13 +600,51 @@ class TLRec_GUI:
         
         x_data, y_data, x, y = Image_Display.Pixel_intensity_one_period(images, x_position,y_position,rtype, Fourier=False)
         x_data_r, y_data_r, x_r, y_r = Image_Display.Pixel_intensity_one_period(images_reference, x_position,y_position,rtype,Fourier=False)
+        
+        dx  = x[-1] - x[0]
+        dxr = x_r[-1] - x_r[0]
+        
+        dx = x[-1] - x[0]
+        x2 = np.concatenate([x, x + dx])
+        y2 = np.concatenate([y, y])
+        
+        x2r = np.concatenate([x_r, x_r + dxr])
+        y2r = np.concatenate([y_r, y_r])
+
+        dxd = x_data[-1] - x_data[0]
+        xdata2 = np.concatenate([x_data, x_data + dxd])
+        ydata2 = np.concatenate([y_data, y_data])
+        
+        dxd_r = x_data_r[-1] - x_data_r[0]
+        xdata2r = np.concatenate([x_data_r, x_data_r + dxd_r])
+        ydata2r = np.concatenate([y_data_r, y_data_r])
+        
         fig=Figure(figsize=(3,1.5))
         ax = fig.add_subplot(1,1,1)
         ax.set_title('Fit at ({},{})'.format(x_position, y_position))
+        '''
         ax.scatter(x_data, y_data, color= "blue",marker= ".")
-        ax.plot(x, y,label='Sample', color ="blue")
+        ax.plot(x, y, color ="blue", label="Sample fit (1st period)")
+    
         ax.scatter(x_data_r, y_data_r, color= "red",marker= ".")
-        ax.plot(x_r,y_r, label='Reference', color ="red")
+        ax.plot(x_r,y_r, color ="red", label="Reference fit (1st period)")
+        '''
+        
+        x_shift = dx
+        ax.plot(x, y, label="Sample", alpha=1.0)
+        ax.scatter(x_data, y_data, marker=".", alpha=1.0)
+
+        ax.plot(x + x_shift, y, alpha=0.35)
+        ax.scatter(x_data + x_shift, y_data, marker=".", alpha=0.35)
+        
+        x_shift_r = dxr
+        ax.plot(x_r, y_r, label="Reference", alpha=1.0)
+        ax.scatter(x_data_r, y_data_r, marker=".", alpha=1.0)
+        ax.plot(x_r + x_shift_r, y_r, alpha=0.35)
+        ax.scatter(x_data_r + x_shift_r, y_data_r, marker=".", alpha=0.35)
+            
+        ax.axvline(2*np.pi, color="black", lw=0.8, alpha=0.15)
+            
         ax.legend(loc='best')
         ax.set_ylabel("Intensity")
         ax.set_xlabel(r'$\chi$') 
@@ -764,10 +834,12 @@ class TLRec_GUI:
                     self.Plot_Figure(self.CanvasPlot, transmission, 2, 0, (3,3), 'Transmission', store_attr="im_tr")
                     self.Plot_Figure(self.CanvasPlot, Dark_Field, 2, 1, (3,3), 'Dark Field', store_attr="im_df")
                 
-                    bt1 = wg.create_button(self.CanvasPlot, 'Save Image', 1,0, command=  lambda : self.save_image(Diff_Phase))
-                    bt2 = wg.create_button(self.CanvasPlot, 'Save Image', 1,1, command=  lambda : self.save_image(Phase))
-                    bt3 = wg.create_button(self.CanvasPlot, 'Save Image', 3,0, command=  lambda : self.save_image(transmission))
-                    bt4 = wg.create_button(self.CanvasPlot, 'Save Image', 3,1, command=  lambda : self.save_image(Dark_Field))
+                    bt1 = wg.create_button(self.CanvasPlot, 'Save DPC',          1, 0, command=lambda: self.save_image(Diff_Phase))
+                    bt2 = wg.create_button(self.CanvasPlot, 'Save Phase',         1, 1, command=lambda: self.save_image(Phase))
+                    bt3 = wg.create_button(self.CanvasPlot, 'Save Transmission',  3, 0, command=lambda: self.save_image(transmission))
+                    bt4 = wg.create_button(self.CanvasPlot, 'Save Dark Field',    3, 1, command=lambda: self.save_image(Dark_Field))
+                    bt5 = wg.create_button(self.CanvasPlot, 'Save All to folder…', 4, 0, columnspan=2,
+                                           command=lambda: self.save_all_results(Diff_Phase, Phase, transmission, Dark_Field))
                 
             
                     if hasattr(self, "wl_master_frame"):

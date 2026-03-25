@@ -3,8 +3,12 @@ from GUI.utils import resource_path
 from GUI.__init__ import __version__
 
 class LoadingScreen(tk.Toplevel):
-    def __init__(self, master, duration=1500):
+    def __init__(self, master, duration=1500, on_finish=None):
         super().__init__(master)
+
+        self._on_finish = on_finish
+        self._finished = False
+        self._after_id = None
 
         self.overrideredirect(True)
         self.config(bg="#4E95D9")
@@ -41,4 +45,24 @@ class LoadingScreen(tk.Toplevel):
         y = (self.winfo_screenheight() - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
 
-        self.after(duration, self.destroy)
+        # Allow users to skip the splash quickly via click or key press.
+        self.bind("<Button-1>", self._finish)
+        self.bind("<Key>", self._finish)
+        self.focus_force()
+
+        self._after_id = self.after(duration, self._finish)
+
+    def _finish(self, _event=None):
+        if self._finished:
+            return
+        self._finished = True
+
+        if self._after_id is not None:
+            self.after_cancel(self._after_id)
+            self._after_id = None
+
+        if callable(self._on_finish):
+            self._on_finish()
+
+        if self.winfo_exists():
+            self.destroy()

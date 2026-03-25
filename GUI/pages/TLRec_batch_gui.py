@@ -55,29 +55,20 @@ def reconstruct_stack_pair(obj_stack_path, ref_stack_path, out_dir, cfg, rec_typ
 
     # G2Period: usamos directamente el valor del JSON (igual que en la GUI principal)
     G2Period = cfg["G2Period"]
-    DSG1     = cfg["DSG1"]
-    DG1G2    = cfg["DG1G2"]
-    DOG1     = cfg["DOG1"]
-    Energy   = cfg["Design_Energy"]
-    px_size  = cfg["Detetor_pixel_size"]
+    DSG1 = cfg["DSG1"]
+    DG1G2 = cfg["DG1G2"]
+    DOG1 = cfg["DOG1"]
+    Energy = cfg["Design_Energy"]
+    px_size = cfg["Detetor_pixel_size"]
 
     v0 = cfg["v0"]
-    n  = cfg["m"]
-    s  = cfg["s"]
+    n = cfg["m"]
+    s = cfg["s"]
 
     log(f"Reconstructing PC images (type={rec_type})...", text_log)
     Diff_Phase, transmission, Dark_Field, Phase, _, _ = Modulation_Curve_Reconstruction(
-        images,
-        images_ref,
-        G2Period,
-        DSG1,
-        DG1G2,
-        DOG1,
-        Energy,
-        px_size,
-        type=rec_type,
-        unwrap_phase=False
-    )
+        images, images_ref, G2Period, DSG1, DG1G2, DOG1, Energy, px_size, type=rec_type,
+        unwrap_phase=False)
 
     log("Applying Wiener filter...", text_log)
     Phase_filtered = Apply_Phase_Wiener_filter(Diff_Phase, px_size, px_size, v0, n, s)
@@ -89,15 +80,15 @@ def reconstruct_stack_pair(obj_stack_path, ref_stack_path, out_dir, cfg, rec_typ
         tifffile.imwrite(path, arr.astype(np.float32))
         log(f"Saved: {path}", text_log)
 
-    save_tiff(Diff_Phase,     "DPC")
+    save_tiff(Diff_Phase, "DPC")
     save_tiff(Phase_filtered, "Phase")
-    save_tiff(transmission,   "Transmission")
-    save_tiff(Dark_Field,     "DarkField")
+    save_tiff(transmission, "Transmission")
+    save_tiff(Dark_Field, "DarkField")
 
     log("Retrieval finished.\n", text_log)
 
 
-def run_batch_TLRec(root_dir, cfg, algo_name, text_log=None):
+def run_batch_TLRec(root_dir, cfg, algo_name, text_log=None, progress_callback=None):
 
     rec_type = algo_name_to_rec_type(algo_name)
 
@@ -124,6 +115,8 @@ def run_batch_TLRec(root_dir, cfg, algo_name, text_log=None):
     ]
 
     log(f"Found {len(subdirs)} subfolders.", text_log)
+
+    done = 0
 
     for acq_name in subdirs:
         acq_path = os.path.join(root_dir, acq_name)
@@ -166,6 +159,10 @@ def run_batch_TLRec(root_dir, cfg, algo_name, text_log=None):
 
         reconstruct_stack_pair(obj_stack, ref_stack, out_dir, cfg, rec_type, text_log=text_log)
 
+        done += 1
+        if callable(progress_callback):
+            progress_callback(done, len(subdirs))
+
     log("Batch TLRec completed.", text_log)
 
 class TLRecBatchGUI:
@@ -183,6 +180,7 @@ class TLRecBatchGUI:
 
         self.root_dir_var = tk.StringVar(value="")
         self.algo_var = tk.StringVar(value="Fast FFT")
+        self.config_path_var = tk.StringVar(value="")
 
         self._build_ui()
 
@@ -236,20 +234,37 @@ class TLRecBatchGUI:
         btn_run = ttk.Button(main, text="Run batch", command=self.start_batch)
         btn_run.grid(row=4, column=1, sticky="e")
 
+        ttk.Label(main, text="Config file (.json) [leave blank to use default]:").grid(
+            row=5, column=0, sticky="w", pady=(10, 0))
+        cfg_entry = ttk.Entry(main, textvariable=self.config_path_var, width=60, state="readonly")
+        cfg_entry.grid(row=6, column=0, sticky="ew", padx=(0, 5))
+        ttk.Button(main, text="Browse...", command=self.browse_config).grid(row=6, column=1, sticky="e")
+
         self.text_log = tk.Text(main, height=15, bg="#1e1e1e", fg="white")
-        self.text_log.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
+        self.text_log.grid(row=7, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
 
         scroll = ttk.Scrollbar(main, command=self.text_log.yview)
         self.text_log.configure(yscrollcommand=scroll.set)
-        scroll.grid(row=5, column=2, sticky="ns", pady=(10, 0))
+        scroll.grid(row=7, column=2, sticky="ns", pady=(10, 0))
+
+        self.progress_bar = ttk.Progressbar(main, mode="determinate", maximum=100)
+        self.progress_bar.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 
         main.columnconfigure(0, weight=1)
-        main.rowconfigure(5, weight=1)
+        main.rowconfigure(7, weight=1)
 
     def browse_root_dir(self):
         folder = filedialog.askdirectory(title="Select 'Acquisitions' folder")
         if folder:
             self.root_dir_var.set(folder)
+
+    def browse_config(self):
+        f = filedialog.askopenfilename(
+            title="Select config JSON",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if f:
+            self.config_path_var.set(f)
 
     def start_batch(self):
         root_dir = self.root_dir_var.get().strip()
@@ -263,13 +278,28 @@ class TLRecBatchGUI:
 
         algo_name = self.algo_var.get()
 
+        self.progress_bar["value"] = 0
         self.set_ui_busy(True)
         log("=== Starting batch reconstruction ===", self.text_log)
 
+        config_file = self.config_path_var.get().strip()
+        if config_file and os.path.isfile(config_file):
+            with open(config_file, "r") as fh:
+                cfg = json.load(fh)
+            log(f"Using config: {config_file}", self.text_log)
+        else:
+            cfg = self.cfg
+            log("Using default config.", self.text_log)
+
+        def on_progress(done, total):
+            pct = int(done / total * 100) if total > 0 else 0
+            self.master.after(0, lambda p=pct: self.progress_bar.configure(value=p))
+
         def worker():
             try:
-                run_batch_TLRec(root_dir, self.cfg, algo_name, text_log=self.text_log)
-                # OJO: aquí usamos master.after, no self.after
+                run_batch_TLRec(root_dir, cfg, algo_name, text_log=self.text_log,
+                                progress_callback=on_progress)
+                self.master.after(0, lambda: self.progress_bar.configure(value=100))
                 self.master.after(0, lambda: messagebox.showinfo("Batch finished", "Batch reconstruction completed."))
             except Exception as e:
                 self.master.after(0, lambda: messagebox.showerror("Error", f"An error occurred:\n{e}"))

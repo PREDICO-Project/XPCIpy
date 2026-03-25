@@ -3,6 +3,67 @@
 ## XPCIpy GUI – Change Log
 This document summarizes all approved updates, fixes, and improvements implemented in the Reconstruction (TLRec) and Simulation (PCSim) GUI modules.
 
+## [v. 1.2.0] – Quality-of-Life & Bug Fixes Round 2
+
+### Keyboard Shortcuts & Documentation
+- **Global keyboard shortcuts** added to main PCSim GUI:
+  - `Enter` / `Ctrl+Enter` — Run simulation on active tab
+  - `Ctrl+S` — Save result
+  - `Ctrl+Shift+S` — Save preset (Inline or Talbot-Lau)
+  - `F1` — Open Help window
+  - `Ctrl+Q` — Exit application
+- **Splash screen improvement**: Loading screen now skippable via click or key press for faster startup during development.
+- **Documentation**: Added `docs/source/shortcuts.rst` with full keyboard shortcut reference (Sphinx documentation).
+- **Help UI**: New "Shortcuts" tab added to Help window displaying all available shortcuts organized by context.
+
+### PCSim – Critical Bug Fixes
+- **Fixed AttributeError in Check Talbot-Lau tab**: Corrected incorrect variable name `self.c_grating_option` → `self.c_grating_def` in `verify_physical_values_checkTL()` method (was causing crash every time Run button was pressed).
+- **Fixed silent data corruption in Inline preset**: Removed spurious `"Period_G1"` field (Talbot-Lau variable) being saved in Inline Simulation preset dictionary.
+
+### PCSim – Usability Improvements
+- **Auto-update Talbot Distance (Check TL tab)**: Added real-time recalculation of Talbot distance field when user modifies X-ray energy, grating period, or grating definition. Previously required manual click to refresh; now uses `trace_add` callbacks on input fields.
+
+### TLRec – Reconstruction GUI Enhancements
+- **Descriptive save buttons**: Renamed all four identical `'Save Image'` buttons to:
+  - `'Save DPC'` (Differential Phase Contrast)
+  - `'Save Phase'` (Integrated Phase)
+  - `'Save Transmission'`
+  - `'Save Dark Field'`
+- **Batch save button**: Added `'Save All to folder...'` button that saves all four reconstruction images (DPC, Phase, Transmission, Dark Field) as float32 TIFF files plus a `reconstruction_config.json` file to a user-selected directory in a single operation.
+
+### TLRec Batch – Reconstruction Batch GUI Enhancements
+- **Custom config support**: Added config file (.json) picker allowing users to load custom reconstruction parameters instead of always using the default config.
+- **Per-file progress bar**: Added visual progress bar that advances with each acquisition processed, providing feedback during batch reconstruction.
+
+---
+
+## [v. 1.1.1] – Detector Post-Processing & Noise Model Improvements
+
+### Detector Post-Processing (Inline & Talbot-Lau)
+- Added full **post-processing detector model** without rerunning the simulation.
+- Detector effects (PSF, downsampling and noise) can now be applied interactively to:
+  - Inline simulations
+  - Talbot-Lau object and reference stacks
+- Raw (pre-detector) and post-processed images are displayed side-by-side for direct comparison.
+
+### Physically-Meaningful Poisson Noise Model
+- Replaced ad-hoc Poisson noise with a **photon-count–based model**.
+- Introduced a configurable **photon number parameter `N0`**:
+  - Intensity is scaled by `N0`
+  - Poisson noise is applied in photon space
+  - Output is renormalized after detection
+
+### Talbot-Lau Post-Processing Enhancements
+- Detector post-processing now affects **both object and reference stacks**.
+- Stack browsing implemented via slice selection without altering window/level.
+- Fixed layout and resizing issues when displaying multiple images simultaneously.
+
+### Stability & Bug Fixes
+- Fixed UI state bugs where disabled widgets were re-enabled after simulation.
+- Fixed frame resizing issues causing images or colorbars to overflow or hide widgets.
+- Improved thread-safe GUI updates during post-processing operations.
+
+
 ---
 [v. 1.1.0] - Major GUI Refactor & Usability Improvements
 

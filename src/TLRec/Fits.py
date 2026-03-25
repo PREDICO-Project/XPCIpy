@@ -75,11 +75,10 @@ def fast_fit_fft(images):
   Matrix = np.ones((z,2), dtype=complex)
   Matrix[:,1] = np.exp(1j*steps)
   A = np.linalg.pinv(Matrix)
-  c0 = np.zeros((y,x), dtype=float)
-  c1 = np.zeros((y,x), dtype=complex)
-  for ii in range(y):
-    for jj in range(x):
-      c0[ii,jj], c1[ii,jj] = np.matmul(A,images[:,ii,jj].T)
+  images_flat = images.reshape(z, -1)
+  coeffs = A @ images_flat
+  c0 = coeffs[0, :].real.reshape(y, x)
+  c1 = coeffs[1, :].reshape(y, x)
 
   offset = c0
   p = np.arctan2(c1.imag,c1.real)
@@ -104,28 +103,54 @@ def fit_fft(images):
       
     """
     (z,y,x) = images.shape
-    offset = np.zeros((y,x))   
     module = np.zeros((y,x))
     phase = np.zeros((y,x))
 
     spectrum = fftpack.fft(images, axis=0)/z
     offset = np.amax(spectrum, axis=0).real
-    #phase, module = np.apply_along_axis(utils.alongaxis_calculate_sine_parameters(spectrum), axis=0)
-     #For each pixel of the images we do the fft along the z axis, to obtain the parameters of the Modulation Curve
-    for ii in range(y):
-      for jj in range(x):
-        phase[ii,jj], module[ii,jj] = utils.calculate_sine_parameters(spectrum[:,ii,jj])
-        if offset[ii,jj] == 0 or module[ii,jj] == 0:
-          offset[ii,jj] = offset[ii,jj-1]
-          phase[ii,jj] = phase[ii,jj-1]
-          module[ii,jj] = module[ii,jj-1]    
+    peaks = np.argmax(np.abs(spectrum[1:, :, :]), axis=0) + 1
+    ii = np.arange(y)[:, None]
+    jj = np.arange(x)[None, :]
+    selected = spectrum[peaks, ii, jj]
+    a = 2 * selected.real
+    b = 2 * selected.imag
+
+    phase = np.arctan(b / a)
+    phase[(a < 0) & (b > 0)] -= np.pi
+    phase[(a < 0) & (b < 0)] += np.pi
+    module = np.sqrt(np.power(a, 2) + np.power(b, 2))
+
+    for i in range(y):
+      for j in range(x):
+        if offset[i, j] == 0 or module[i, j] == 0:
+          offset[i, j] = offset[i, j-1]
+          phase[i, j] = phase[i, j-1]
+          module[i, j] = module[i, j-1]
     visibility = utils.calculate_visibility(module,offset)
     return offset,  phase, visibility    
    
 
 
 def fit_least_square(images):
-    
+    """
+    Least-squares based algorithm to fit a cosine model for each pixel modulation curve.
+    For every pixel, the method estimates amplitude, angular frequency, phase, and offset
+    using non-linear optimization (`scipy.optimize.curve_fit`). Then, it derives the
+    visibility as amplitude divided by offset.
+
+    Args:
+        images (numpy array): 3 dimensional array with the raw images recorded by the detector.
+            The shape should be (N, Y, X) where N is the number of phase steps, Y is the number
+            of pixels in the vertical orientation and X the number of pixels in the horizontal
+            orientation.
+
+    Returns:
+        Offset (numpy array): Offset of the Modulation Curve of all pixels.
+        Phase (numpy array): Phase of the Modulation Curve of all pixels.
+        Visibility (numpy array): Visibility of the Modulation Curve of all pixels.
+        frequency (numpy array): Estimated angular frequency of the fit for all pixels.
+    """
+
     (z,y,x) = images.shape
     step = 1
     tt = np.arange(0,z,step)
@@ -147,6 +172,7 @@ def fit_least_square(images):
           w = 0
           p = 0
           c = guess_offset
+          popt = [A, w, p, c]
 
         A, w, p, c = popt
         if A == 0:
@@ -170,9 +196,24 @@ def fit_least_square(images):
   
 @njit(parallel=False, cache=True, fastmath=False)
 def opt_fit_least_square(images,A):
+    """
+    Optimized pixel-wise least-squares solver using a precomputed design matrix.
+    It solves the linear system for the model parameters (offset, cosine term,
+    and sine term) for each detector pixel.
+
+    Args:
+        images (numpy array): 3 dimensional array with the raw images recorded by the detector.
+            The shape should be (N, Y, X).
+        A (numpy array): Design matrix with shape (N, 3) used in the linear least-squares fit.
+
+    Returns:
+        o (numpy array): Offset term for all pixels.
+        a (numpy array): Cosine coefficient for all pixels.
+        b (numpy array): Sine coefficient for all pixels.
+    """
     A = np.asarray(A, dtype = np.float64)
     (z,y,x) = images.shape
-    o = np.zeros((y,x), dtype = np.float64)
+    """o = np.zeros((y,x), dtype = np.float64)
     a = np.zeros((y,x), dtype = np.float64)
     b =np.zeros((y,x), dtype = np.float64)
     for ii in range(y):
@@ -181,11 +222,33 @@ def opt_fit_least_square(images,A):
         o_sol, a_sol, b_sol = np.linalg.lstsq(A, yy)[0]
         o[ii,jj] = o_sol
         a[ii,jj] = a_sol
-        b[ii,jj] = b_sol     
+        b[ii,jj] = b_sol"""
+    # It may be more efficient
+    C = np.linalg.inv(A.T @ A) @ A.T
+    images_flat = images.reshape(z, y * x)
+    coeffs = C @ images_flat
+    o = coeffs[0, :].reshape(y, x)
+    a = coeffs[1, :].reshape(y, x)
+    b = coeffs[2, :].reshape(y, x)     
     return o, a, b
 
   
 def Step_correction(images):
+    """
+    Corrects phase-step errors by minimizing a function.
+    The function estimates step deviations, builds an updated
+    design matrix and solves for pixel-wise model coefficients.
+
+    Args:
+      images (numpy array): 3 dimensional array with the raw images recorded by the detector.
+        The shape should be (N, Y, X).
+
+    Returns:
+      o (numpy array): Offset term for all pixels.
+      a (numpy array): Cosine coefficient for all pixels.
+      b (numpy array): Sine coefficient for all pixels.
+      new_steps (numpy array): Corrected phase-step positions.
+    """
     steps = np.arange(0,images.shape[0],1)*2*np.pi/images.shape[0]
     error = np.zeros((images.shape[0]))
     new_errors = optimize.minimize(Correction.Improve_reconstruction_minimization_steps, error, Correction.calculate_C_matrix(images))
@@ -202,8 +265,19 @@ def Step_correction(images):
   
 @njit(parallel=False, cache=False, fastmath=True)  
 def resolve_eq(images,A ):
+  """
+  Args:
+      images (numpy array): 3 dimensional array with the raw images recorded by the detector.
+          The shape should be (N, Y, X).
+      A (numpy array): Design matrix with shape (N, 3).
+
+  Returns:
+      o (numpy array): Offset term for all pixels.
+      a (numpy array): Cosine coefficient for all pixels.
+      b (numpy array): Sine coefficient for all pixels.
+  """
   (z,y,x) = images.shape
-  o = np.zeros((y,x))
+  """o = np.zeros((y,x))
   a = np.zeros((y,x))
   b = np.zeros((y,x))
   B = np.linalg.inv(A.T@A)
@@ -214,5 +288,12 @@ def resolve_eq(images,A ):
       o_sol, a_sol, b_sol = C@yy
       o[ii,jj] = o_sol
       a[ii,jj] = a_sol
-      b[ii,jj] = b_sol
+      b[ii,jj] = b_sol"""
+  # It may be more efficient
+  C = np.linalg.inv(A.T@A) @ A.T
+  images_flat = images.reshape(z, y * x)
+  coeffs = C @ images_flat
+  o = coeffs[0, :].reshape(y, x)
+  a = coeffs[1, :].reshape(y, x)
+  b = coeffs[2, :].reshape(y, x)
   return o, a, b
