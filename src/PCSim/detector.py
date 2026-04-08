@@ -31,6 +31,10 @@ class Detector():
         # Convert FWHM to sigma 
         fwhm_px = self.FWHM_detector / current_pixel_size
         sigma_base = fwhm_px / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+        if sigma_base <= 0:
+            psf = np.zeros((height, width), dtype=float)
+            psf[height // 2, width // 2] = 1.0
+            return psf
         sigma1 = sigma_base
         sigma2 = 3.0 * sigma_base
         w1, w2 = 0.90034, 0.099613

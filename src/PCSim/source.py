@@ -36,6 +36,8 @@ class Source():
 
             # Normalize to sum=1
             s = sum(intensities)
+            if s <= 0:
+                raise ValueError("Spectrum intensities must have a positive sum.")
             intensities = intensities / s
             mean_energy = np.average(energies, weights=intensities)
 

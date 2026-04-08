@@ -11,7 +11,7 @@ def create_propagator(n,pixel_size,distance, energy):
     fs=1/pixel_size
     fx=np.linspace(-fs/2, fs/2-fs/W, W)
     fy=np.linspace(-fs/2, fs/2-fs/H, H)
-    FX, FY = np.meshgrid(fx,fx)
+    FX, FY = np.meshgrid(fx, fy)
     propagator = np.exp(-1j*np.pi*wavelength*DOD*(FX**2+FY**2))
 
     return propagator

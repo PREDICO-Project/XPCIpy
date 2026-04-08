@@ -58,6 +58,8 @@ class Geometry():
         # distance1 and distance2 are measured from same point
         if not conical:
             return 1
+        if distance_1 <= 0:
+            raise ValueError("distance_1 must be > 0 for conical magnification.")
         
         return distance_2/distance_1
 

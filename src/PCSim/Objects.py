@@ -87,7 +87,7 @@ class Wedge(GeometricObject):
 
         half_width = width / 2
         wedge_mask = np.abs(x) < half_width
-        image[wedge_mask] = (half_width-np.abs(x[wedge_mask]) / half_width * thickness)
+        image[wedge_mask] = ((half_width-np.abs(x[wedge_mask])) / half_width) * thickness
         
         return image
         

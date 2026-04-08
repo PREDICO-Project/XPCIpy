@@ -3,7 +3,7 @@
 ## XPCIpy GUI – Change Log
 This document summarizes all approved updates, fixes, and improvements implemented in the Reconstruction (TLRec) and Simulation (PCSim) GUI modules.
 
-## [v. 1.2.0] – Quality-of-Life & Bug Fixes Round 2
+## [v. 1.2.0] – Quality-of-Life & Bug Fixes Round
 
 ### Keyboard Shortcuts & Documentation
 - **Global keyboard shortcuts** added to main PCSim GUI:
@@ -17,7 +17,7 @@ This document summarizes all approved updates, fixes, and improvements implement
 - **Help UI**: New "Shortcuts" tab added to Help window displaying all available shortcuts organized by context.
 
 ### PCSim – Critical Bug Fixes
-- **Fixed AttributeError in Check Talbot-Lau tab**: Corrected incorrect variable name `self.c_grating_option` → `self.c_grating_def` in `verify_physical_values_checkTL()` method (was causing crash every time Run button was pressed).
+- **Fixed AttributeError in Check Talbot-Lau tab**: Corrected incorrect variable name `self.c_grating_option` -> `self.c_grating_def` in `verify_physical_values_checkTL()` method (was causing crash every time Run button was pressed).
 - **Fixed silent data corruption in Inline preset**: Removed spurious `"Period_G1"` field (Talbot-Lau variable) being saved in Inline Simulation preset dictionary.
 
 ### PCSim – Usability Improvements
