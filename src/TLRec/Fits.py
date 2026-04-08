@@ -213,16 +213,6 @@ def opt_fit_least_square(images,A):
     """
     A = np.asarray(A, dtype = np.float64)
     (z,y,x) = images.shape
-    """o = np.zeros((y,x), dtype = np.float64)
-    a = np.zeros((y,x), dtype = np.float64)
-    b =np.zeros((y,x), dtype = np.float64)
-    for ii in range(y):
-      for jj in range(x):
-        yy = np.asarray(images[:,ii,jj], dtype = np.float64)
-        o_sol, a_sol, b_sol = np.linalg.lstsq(A, yy)[0]
-        o[ii,jj] = o_sol
-        a[ii,jj] = a_sol
-        b[ii,jj] = b_sol"""
     # It may be more efficient
     C = np.linalg.inv(A.T @ A) @ A.T
     images_flat = images.reshape(z, y * x)
@@ -277,18 +267,6 @@ def resolve_eq(images,A ):
       b (numpy array): Sine coefficient for all pixels.
   """
   (z,y,x) = images.shape
-  """o = np.zeros((y,x))
-  a = np.zeros((y,x))
-  b = np.zeros((y,x))
-  B = np.linalg.inv(A.T@A)
-  C = B @ A.T
-  for ii in range(y):
-    for jj in range(x):
-      yy =np.asarray(images[:,ii,jj], dtype = np.float64)
-      o_sol, a_sol, b_sol = C@yy
-      o[ii,jj] = o_sol
-      a[ii,jj] = a_sol
-      b[ii,jj] = b_sol"""
   # It may be more efficient
   C = np.linalg.inv(A.T@A) @ A.T
   images_flat = images.reshape(z, y * x)
