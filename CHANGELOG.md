@@ -3,6 +3,49 @@
 ## XPCIpy GUI – Change Log
 This document summarizes all approved updates, fixes, and improvements implemented in the Reconstruction (TLRec) and Simulation (PCSim) GUI modules.
 
+## [v. 1.3.0] – PCSim Physics Engine Improvements
+
+### PCSim – Insert Mode for CT-like Phantoms
+- **New `is_insert` flag** on `GeometricObject` subclasses: setting `obj.is_insert = True` marks an object as an insert that physically replaces the base material instead of adding on top of it.
+- **New function `_group_transmission_with_insert_replace()`** in `experiments.py`: when a group of objects at the same DSO plane contains inserts, the function replaces the base material contribution in the overlap region pixel-by-pixel, producing a physically correct CT-like phantom transmission.
+  - Validates that exactly one base object exists per group; falls back to `_group_transmission_default` otherwise.
+  - 5 unit tests added covering: no inserts, single insert, multiple inserts, fallback with no base, fallback with multiple bases.
+- **README updated** with a new section "Insert Mode For CT-like Phantoms" explaining the physics, constraints, and a code example.
+
+### PCSim – Source PSF Robustness
+- **Sub-pixel PSF guard**: `Source.Source_PSF()` now detects when the effective Gaussian sigma is smaller than 0.5 pixels (sub-pixel regime) and returns a delta function instead of computing a numerically unstable Gaussian. Prevents homogeneous output images caused by near-zero PSF convolutions.
+
+### PCSim – Object Positioning API: Physical Units
+- **`x_shift` / `y_shift` now in µm** (physical units) across all `GeometricObject` subclasses (`Sphere`, `Wedge`, `Cylinder`, `Grating`, `DoubleSlit`, `KnifeEdge`, `Disk`). Previously these parameters were in pixels, which was non-intuitive and pixel-size dependent.
+  - Each `make_geometry()` converts internally via `round(shift_µm / pixel_size)` so the physical position is always consistent regardless of pixel size.
+  - **Migration**: multiply old pixel values by `pixel_size` to get the equivalent µm value.
+
+### PCSim – Bug Fix: Object Shift Formula
+- **Corrected grid shift formula** in all `make_geometry()` methods. The old formula `(-n ± shift_px)//2 : (n ± shift_px)//2` applied the shift at half the intended magnitude and with inverted sign. The new formula `-n//2 + shift_px : n//2 + shift_px` produces the correct 1:1 physical displacement in the expected direction.
+
+### Simple Numerical Simulation – Random Talbot-Lau Dataset Workflow
+- **Expanded geometric flexibility** in `src/Simple_Numerical_Simulation/Objects.py`:
+  - Added support for center/rotation handling in core shapes used in synthetic scenes.
+  - Added a richer geometry set and compositing utilities for layered synthetic phantoms.
+- **New random scene generator**: introduced `RandomSimGenerator` to create random multi-object scenes with configurable object count, random positioning/orientation, material sampling, and optional insert regions.
+- **Insert-aware composition (PCSim-inspired)**: added local replacement behavior for inserts when building synthetic objects, so insert regions can replace base material contribution in overlap areas.
+- **Material/optics outputs for supervision**:
+  - Added map accessors in `MultiMaterialComposite` (`thickness`, `phase`, `attenuation`, and **transmission**).
+  - Added transmission computation via `get_transmission_map()` to support attenuation-vs-transmission training targets.
+- **Physics-consistent optical scaling**: random generation path now supports physical `delta`/`beta` input with energy-based internal conversion through `energy_keV`.
+- **High-level simulation helper**: added `simulate_random_tl_sample(...)` in `src/Simple_Numerical_Simulation/simulation.py` to produce, in one call:
+  - synthetic scene maps (phase, gradient/DPC, laplacian, attenuation, transmission, thickness),
+  - object/reference Talbot-Lau phase-stepping stacks.
+
+### Notebook Workflow – Dataset + Reconstruction Integration
+- **Notebook relocation**: moved simulation workflow notebook to `Notebooks/Notebook_Simulation.ipynb`.
+- **Import portability update**: notebook import cells now append the project root dynamically so modules under `src/` resolve correctly when launched from `Notebooks/`.
+- **Dataset guide added**: included an English quick guide section for random TL dataset generation and parameter usage.
+- **TIFF export path integrated**: notebook saves object/reference stacks for reconstruction experiments.
+- **TLRec bridge added**: new notebook cell runs `Modulation_Curve_Reconstruction` directly from generated stacks and exports DPC/Transmission/Dark-field/Phase reconstructions.
+
+---
+
 ## [v. 1.2.0] – Quality-of-Life & Bug Fixes Round
 
 ### Keyboard Shortcuts & Documentation

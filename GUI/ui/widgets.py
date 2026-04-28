@@ -141,9 +141,6 @@ class VerticalScrolledFrame(ttk.Frame):
             size = (interior.winfo_reqwidth(), interior.winfo_reqheight())
             canvas.config(scrollregion="0 0 %s %s" % size)
 
-            if interior.winfo_reqwidth() != canvas.winfo_width():
-                canvas.config(width=interior.winfo_reqwidth())
-
         interior.bind('<Configure>', _configure_interior)
 
         def _configure_canvas(event):

@@ -8,7 +8,7 @@
     "Beam_Spectrum": "Monoenergetic",
     "energy": 25,
     "Object": "Sphere",
-    "radius": 200,
+    "outer_radius": 200,
     "inner_radius": 0,
     "orientation": "Vertical",
     "material": "H2O.txt",

@@ -1,51 +1,42 @@
+﻿import os
+import json
+import copy
+import sys
+import threading
+import traceback
+
+import numpy as np
+import tifffile
 import tkinter as tk
+from tkinter import ttk, messagebox
+from tkinter.filedialog import asksaveasfilename, askopenfilename
+from PIL import Image, ImageTk
+
+from matplotlib import rcParams
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+
 from GUI.ui.styles import Styles as stl
 from GUI.ui.widgets import Widget as wg
-from tkinter import ttk
-from tkinter.filedialog import asksaveasfilename, askopenfilename
-import os
-import tifffile
-from PIL import Image, ImageTk
-#import matplotlib.pyplot as plt
-from matplotlib import rcParams
-import numpy as np
-from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg)
-from matplotlib.figure import Figure
-import src.PCSim.Objects as obj
-import src.PCSim.Geometry as geom
-import json
-import src.PCSim.experiments as exp
-import src.PCSim.source as source 
-from src.PCSim.TL_conf import TL_CONFIG
-import src.PCSim.detector as detector
-import src.PCSim.check_Talbot as check_Talbot
-from GUI.pages.TLRec_gui import TLRec_GUI
-from GUI.text import check_TL_text
 from GUI.ui.widgets import VerticalScrolledFrame as vsf
 from GUI.ui.widgets import ToggleButton
-import zipfile
-import datetime
-import io
-import traceback
-from tkinter import messagebox
-import sys
-from GUI.utils import resource_path
-import threading
-from src.PCSim import utils as pcsim_utils
 from GUI.ui.tooltips import ToolTip
+from GUI.utils import resource_path
+
 from GUI.pages.help_window import HelpWindow
 from GUI.pages.info_windows import LicenseWindow, CiteWindow
-from GUI.pages.TLRec_batch_gui import TLRecBatchGUI
+import src.PCSim.detector as detector
+import src.PCSim.Objects as obj
+from src.PCSim.material import list_available_materials
+from GUI.pages.tabs.inline_tab import InlineTab
+from GUI.pages.tabs.checktl_tab import CheckTLTab
+from GUI.pages.tabs.tl_tab import TLTab
+from GUI.pages.tabs.sns_tab import SNSTab
+from GUI.pages.tabs.tlrec_tab import TLRecTab
 
-class PCSim_gui:
+class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
 
     def __init__(self, master):
-
-        # OLD
-        #self.parent_path = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-        #self.granpa_path = os.path.abspath(os.path.join(self.parent_path, os.pardir))
-        #self.granpa2_path = os.path.abspath(os.path.join(self.granpa_path, os.pardir))
-        #self.root_path = os.path.abspath(os.path.join(self.granpa2_path, os.pardir)) # Not used really
 
         self.master = master
 
@@ -57,69 +48,64 @@ class PCSim_gui:
 
         # --- STATUS BAR ---
         self.status_var = tk.StringVar(value="Ready")
-        status_bar = ttk.Label(
-            self.master,
-            textvariable=self.status_var,
-            relief="sunken",
-            anchor="w"
-        )
+        status_bar = ttk.Label(self.master, textvariable=self.status_var, relief="sunken", anchor="w")
         status_bar.grid(row=1, column=0, sticky="ew")
-        
+
         self.progress_var = tk.DoubleVar(value=0.0)
-        self.progress_bar = ttk.Progressbar(
-            self.master,
-            variable=self.progress_var,
-            maximum=100,
-            mode="determinate"
-        )
+        self.progress_bar = ttk.Progressbar(self.master, variable=self.progress_var, maximum=100,
+            mode="determinate")
+        
         self.master.grid_rowconfigure(2, weight=0)
         self.progress_bar.grid(row=2, column=0, sticky="ew")
-        
-        # --- LOADING OVERLAY ---
+
+        # OVERLAY
         self.overlay = None
         self.overlay_label = None
         self.overlay_progress = None
         self.overlay_progress_var = None
 
-        # --- NOTEBOOK ---
+        #NOTEBOOK
         self.tab_container = ttk.Notebook(self.master)
-    
         self.tab_container.grid(row=0, column=0, sticky="nsew")
-        
-        # HELP
+
+        #HELP MENU-
         menubar = tk.Menu(self.master)
         self.master.config(menu=menubar)
-
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="Help / User Guide", command=self.open_help_window)
         help_menu.add_command(label="How to cite XPCIpy", command=self.open_cite_window)
         help_menu.add_command(label="License", command=self.open_license_window)
-        
         menubar.add_cascade(label="Help", menu=help_menu)
 
-        global Beam_Shape_OPTIONS, Beam_Spectrum_OPTIONS, Object_OPTIONS, Image_OPTIONS
-        #spectra_path = os.path.join(self.parent_path, 'Resources', 'Spectra') # OLD
+        #LISTS
         spectra_path = resource_path("Resources/Spectra")
-        Beam_Spectrum_OPTIONS = sorted([f for f in os.listdir(spectra_path)
-                                        if os.path.isfile(os.path.join(spectra_path, f))])
-        Beam_Spectrum_OPTIONS.append("Monoenergetic")
-        Beam_Shape_OPTIONS = ["Plane", "Conical"]
-        Object_OPTIONS = ["Sphere", "Cylinder"]
-        Image_OPTIONS = ["Ideal", "Realistic"]
+        self.Beam_Spectrum_OPTIONS = sorted([
+            f for f in os.listdir(spectra_path)
+            if os.path.isfile(os.path.join(spectra_path, f))])
+        
+        self.Beam_Spectrum_OPTIONS.append("Monoenergetic")
+        self.Beam_Shape_OPTIONS = ["Plane", "Conical"]
+        self.Object_OPTIONS = ["Sphere", "Cylinder"]
+        self.Image_OPTIONS = ["Ideal", "Realistic"]
+        materials_path = resource_path("Resources/complex_refractive_index")
+        self.material_file_options = sorted([
+            f for f in os.listdir(materials_path)
+            if os.path.isfile(os.path.join(materials_path, f))
+        ])
 
         self.initialize_vars()
         self.create_tabs()
         self._ui_busy = False
         self.configure_shortcuts()
-        
+
     def close_app(self):
         self.master.quit()
         self.master.destroy()
         sys.exit(0)
-        
+
     def open_help_window(self):
         HelpWindow(self.master)
-        
+
     def open_license_window(self):
         LicenseWindow(self.master)
 
@@ -127,7 +113,6 @@ class PCSim_gui:
         CiteWindow(self.master)
 
     def configure_shortcuts(self):
-        # Global QoL shortcuts
         self.master.bind_all("<Return>", self._on_shortcut_run)
         self.master.bind_all("<KP_Enter>", self._on_shortcut_run)
         self.master.bind_all("<Control-Return>", self._on_shortcut_run)
@@ -148,10 +133,11 @@ class PCSim_gui:
     def _on_shortcut_run(self, _event=None):
         if self._ui_busy:
             return "break"
-
         active = self._active_tab_widget()
         if active is self.inline_tab:
             self.RunInline()
+        elif active is self.sns_tab:
+            self.RunSimpleNumerical()
         elif active is self.check_TL_tab:
             self.RunCheckTL()
         elif active is self.TL_tab:
@@ -162,12 +148,16 @@ class PCSim_gui:
 
     def _on_shortcut_save(self, _event=None):
         active = self._active_tab_widget()
-
         if active is self.inline_tab:
             if hasattr(self, "inline_display_intensity"):
                 self.save_image(self.inline_display_intensity)
             else:
                 self.set_status("Run Inline simulation first to save an image.")
+        elif active is self.sns_tab:
+            if hasattr(self, "sns_last_display"):
+                self.save_image(self.sns_last_display)
+            else:
+                self.set_status("Run Simple Numerical simulation first to save an image.")
         elif active is self.check_TL_tab:
             if hasattr(self, "check_tl_intensities"):
                 self.save_image(self.check_tl_intensities)
@@ -180,19 +170,18 @@ class PCSim_gui:
                 self.set_status("Run TL simulation first to save images.")
         else:
             self.set_status("No save action available for this tab.")
-
         return "break"
 
     def _on_shortcut_save_preset(self, _event=None):
         active = self._active_tab_widget()
-
         if active is self.inline_tab:
             self.save_preset_Inline()
+        elif active is self.sns_tab:
+            self.save_preset_SNS()
         elif active is self.TL_tab:
             self.save_preset_TL()
         else:
             self.set_status("No preset save action for this tab.")
-
         return "break"
 
     def _on_shortcut_help(self, _event=None):
@@ -202,353 +191,46 @@ class PCSim_gui:
     def _on_shortcut_exit(self, _event=None):
         self.close_app()
         return "break"
-        
+
     def create_tabs(self):
-        # Create a Frame for each tab
         self.TLRec_tab = ttk.Frame(self.tab_container, style="TFrame")
         self.inline_tab = ttk.Frame(self.tab_container, style="TFrame")
+        self.sns_tab = ttk.Frame(self.tab_container, style="TFrame")
         self.check_TL_tab = ttk.Frame(self.tab_container, style="TFrame")
         self.TL_tab = ttk.Frame(self.tab_container, style="TFrame")
         self.TL_batch_tab = ttk.Frame(self.tab_container, style="TFrame")
 
-        # Add tabs to the tabs container
-        self.tab_container.add(self.TLRec_tab, text = 'TLRec')
+        self.tab_container.add(self.TLRec_tab, text='TLRec')
         self.tab_container.add(self.inline_tab, text="Inline Simulation")
+        self.tab_container.add(self.sns_tab, text="Simple Numerical Simulation")
         self.tab_container.add(self.check_TL_tab, text="Check Talbot-Lau effect")
         self.tab_container.add(self.TL_tab, text="Talbot Lau Phase Contrast Simulation")
         self.tab_container.add(self.TL_batch_tab, text="TLRec batch (in develop)")
 
         self.populate_TLRec_tab()
         self.populate_inline_tab()
+        self.populate_sns_tab()
         self.populate_checkTL_tab()
         self.populate_TL_tab()
         self.populate_TLRec_batch_tab()
-        
-    def populate_TLRec_tab(self):
-        scrollframe = vsf(self.TLRec_tab)
-        scrollframe.grid(row=0, column=0, sticky="nsew")
-        container = scrollframe.interior
-        self.TLRec_tab.grid_rowconfigure(0, weight=1)
-        self.TLRec_tab.grid_columnconfigure(0, weight=1)
-        #self.TLRec_tab.grid_rowconfigure(0, weight=1)
-        #self.TLRec_tab.grid_columnconfigure(0, weight=1)
-        #scrollframe = vsf(self.TLRec_tab)
-        #scrollframe.grid(row=0, column=0, sticky="nsew")
-        self.tlrec_gui = TLRec_GUI(container, status_var=self.status_var)
-        #TLRec_GUI(self.TLRec_tab)
-
-    def populate_TLRec_batch_tab(self):
-        scrollframe = vsf(self.TL_batch_tab)
-        scrollframe.grid(row=0, column=0, sticky="nsew")
-        container = scrollframe.interior
-        self.TL_batch_tab.grid_rowconfigure(0, weight=1)
-        self.TL_batch_tab.grid_columnconfigure(0, weight=1)
-        self.tlrec_batch_gui = TLRecBatchGUI(container)
-        
-    def populate_inline_tab(self):
-        
-        scrollframe = vsf(self.inline_tab)
-        scrollframe.grid(row=0, column=0, sticky="nsew")
-        container = scrollframe.interior
-        
-        self.inline_tab.grid_rowconfigure(0, weight=1)
-        self.inline_tab.grid_columnconfigure(0, weight=1)
-        self.inline_tab.grid_columnconfigure(1, weight=0)
-        self.inline_tab.grid_columnconfigure(2, weight=1)
-        
-        container.grid_rowconfigure(0, weight=1)
-        container.grid_columnconfigure(0, weight=1)
-        container.grid_columnconfigure(1, weight=1)
-        container.grid_columnconfigure(2, weight=2)
-        parameters_frame = ttk.Frame(container, style='TFrame')
-        parameters_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
-        
-        #parameters_frame.grid_rowconfigure(0, weight=1)
-        #parameters_frame.grid_columnconfigure(0, weight=1)
-
-        self.i_results_frame = ttk.Frame(container, style='TFrame')
-        self.i_results_frame.grid(row = 0, column = 2, rowspan=12,  sticky='nsew')
-        self.i_results_frame.grid_rowconfigure(0, weight=1)
-        self.i_results_frame.grid_columnconfigure(0, weight=1)
-
-        self.initialize_Figure(self.i_results_frame, (3,3), 0,0)
-
-        nLabel, i_n_e = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.i_n,padx = 20)
-        pxLabel, i_px_e = wg.create_label_entry(parameters_frame, 'Pixel size (micrometer)', 1, 0,textvariable=self.i_pixel_size,padx = 20)
-        DODLabel, i_dod_e = wg.create_label_entry(parameters_frame, 'Distance Object Detector (cm)', 2, 0,textvariable=self.i_DOD,padx = 20)
-        self.DSOLabel, i_dso_e = wg.create_label_entry(parameters_frame, 'Distance Source-Object (cm)', 3, 0,textvariable=self.i_DSO,padx = 20)
-        self.FWHMSouLabel, i_fwhm_src_e = wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 4, 0,textvariable=self.i_FWHM_source,padx = 20)
-        self.BeamShapeLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Beam Shape',row = 5 ,column =0, textvariable = self.i_Beam_Shape, names = Beam_Shape_OPTIONS)
-        self.BeamSpectrumLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Spectrum',row = 6 ,column =0, textvariable = self.i_Beam_Spectrum,names = Beam_Spectrum_OPTIONS)
-        self.BeamEnergyL, i_energy_e = wg.create_label_entry(parameters_frame, 'Energy (keV, necessary to initialize the variable)', row=7, column=0, textvariable=self.i_beam_energy, padx = 20)
-        self.ObjectLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Object',row = 8 ,column =0, textvariable = self.i_Object,names = Object_OPTIONS)
-        wg.create_button(parameters_frame, 'Set Object Parameters', 9, 0, command = self.open_params)
-        self.DetectorL,_ = wg.create_label_combobox(parameters_frame, label_text='Image',row = 10 ,column =0, textvariable = self.i_image_option,names = Image_OPTIONS)
-        self.PixelDetectorL, i_pxdet_e = wg.create_label_entry(parameters_frame, 'Detector Pixel Size (microns)', 11, 0,textvariable=self.i_detector_pixel_size,padx = 20)
-        self.ResolutionL, i_fwhm_det_e = wg.create_label_entry(parameters_frame, 'Detector Resolution (FWHM microns)', 12, 0,textvariable=self.i_FWHM_detector,padx = 20)
-        #self.zip_checkbox_inline = wg.create_checkbox(parameters_frame, text="Create ZIP with simulation data", row=13, column=0, variable=self.i_zip_var, sticky="w")
-        ToggleButton(parameters_frame, text="Create ZIP with simulation data", variable=self.i_zip_var).grid(row=13, column=0, pady=5)
-        self.RunButton = wg.create_button(parameters_frame, 'Run', 14,0,command = self.RunInline)
-        
-        wg.create_button(parameters_frame, "Save preset", 15, 0, command=self.save_preset_Inline)
-        wg.create_button(parameters_frame, "Load preset", 15, 1, command=self.load_preset_Inline)
-        
-        self.add_detector_post_panel(parameters_frame, mode="inline", row=17)
-
-        ExitButton = wg.create_button(parameters_frame, "Exit", 16, 0, padx = 60, command=self.close_app)
-        
-        
-        self._watch(i_n_e, self.i_n, lambda v: v > 0)
-        self._watch(i_px_e, self.i_pixel_size, lambda v: v > 0)
-        self._watch(i_dod_e, self.i_DOD, lambda v: v > 0)
-        self._watch(i_dso_e, self.i_DSO, lambda v: v > 0)
-        self._watch(i_fwhm_src_e, self.i_FWHM_source, lambda v: v > 0)
-        self._watch(i_energy_e, self.i_beam_energy, lambda v: v > 0)
-        self._watch(i_pxdet_e, self.i_detector_pixel_size, lambda v: v > 0)
-        self._watch(i_fwhm_det_e, self.i_FWHM_detector, lambda v: v > 0)
-        self.add_tooltip(nLabel, "Number of pixels of the simulated wavefront (n x n).")
-        self.add_tooltip(pxLabel, "Pixel size of the wavefront grid in micrometers.")
-        self.add_tooltip(DODLabel, "Distance from the object to the detector in centimeters.")
-        self.add_tooltip(self.BeamShapeLabel, "Beam geometry: 'Plane' = parallel beam, 'Conical' = diverging cone.")
-        self.add_tooltip(self.BeamSpectrumLabel, "Select a spectrum file or 'Monoenergetic' for a single energy.")
-        self.add_tooltip(self.DSOLabel, "Distance from the source to the object in centimeters.")
-        self.add_tooltip(self.FWHMSouLabel, "Full Width at Half Maximum (FWHM) of the source in micrometers.")
-        self.add_tooltip(self.BeamEnergyL, "Energy of the beam in keV. Used for wavelength-dependent calculations.")
-        self.add_tooltip(self.ObjectLabel, "Type of object to simulate: 'Sphere' or 'Cylinder'.")
-        self.add_tooltip(self.DetectorL, "Type of image to simulate: 'Ideal' (perfect detector) or 'Realistic' (with detector effects).")
-        self.add_tooltip(self.PixelDetectorL, "Pixel size of the detector in micrometers.")
-        self.add_tooltip(self.ResolutionL, "Detector resolution specified as Full Width at Half Maximum (FWHM) in micrometers.")
-        self.add_tooltip(self.RunButton, "Start the inline phase contrast simulation with the specified parameters.")
-
-    def populate_checkTL_tab(self):
-        
-        scrollframe = vsf(self.check_TL_tab)
-        scrollframe.grid(row=0, column=0, sticky="nsew")
-        container = scrollframe.interior
-        
-        self.check_TL_tab.grid_rowconfigure(0, weight=1)
-        self.check_TL_tab.grid_columnconfigure(0, weight=0)
-        self.check_TL_tab.grid_columnconfigure(1, weight=0)
-        self.check_TL_tab.grid_columnconfigure(2, weight=1)
-        Grating_OPTIONS = ["Custom", "Phase pi/2", "Phase pi"]
-
-        parameters_frame = ttk.Frame(container, style='TFrame')
-        parameters_frame.bind("<Button-1>", self.modify_TL_dist)
-        parameters_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
-
-        self.c_results_frame = ttk.Frame(container, style='TFrame')
-        self.c_results_frame.grid(row = 0, column = 2, rowspan=12,  sticky='nsew')
-
-        self.initialize_Figure(self.c_results_frame, (3,3), 0,0)
-
-        nLabel, c_n_e = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.c_n,padx = 20)
-        pxLabel, c_px_e = wg.create_label_entry(parameters_frame, 'Pixel size (micrometer)', 1, 0,textvariable=self.c_pixel_size,padx = 20)
-        FWHMSouLabel, c_fwhm_src_e = wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 2, 0,textvariable=self.c_FWHM_source,padx = 20)
-        EnergyL, c_energy_e = wg.create_label_entry(parameters_frame, 'DEsign Energy (keV)', 3, 0,textvariable=self.c_energy,padx = 20)
-        PeriodL, c_period_e = wg.create_label_entry(parameters_frame, 'Grating Period (microns)', 4, 0,textvariable=self.c_period,padx = 20)
-        DCL, c_dc_e = wg.create_label_entry(parameters_frame, 'Duty Cycle', 5, 0,textvariable=self.c_DC,padx = 20)
-        materialL,_ = wg.create_label_entry(parameters_frame, 'Material (just used for custom grating)', 6, 0,textvariable=self.c_material,padx = 20)
-        barHeightL, c_barheight_e = wg.create_label_entry(parameters_frame, 'Bar height (micrometer, just for custom grating)', 7, 0,textvariable=self.c_bar_height,padx = 20)
-        gratigL,_ = wg.create_label_combobox(parameters_frame, label_text='Grating Type',row = 8 ,column =0, textvariable = self.c_grating_def, names = Grating_OPTIONS)
-        multiplesL, c_multiples_e = wg.create_label_entry(parameters_frame, 'Multiples of Talbot distance to be represented', row=9, column=0, textvariable=self.c_multiple, padx = 20)
-        iterationsL, c_iter_e = wg.create_label_entry(parameters_frame, 'Number of calculations performed', row=10, column=0, textvariable=self.c_iterations, padx = 20)
-        TLDist,_ = wg.create_label_entry(parameters_frame, 'Talbot Distance (cm)', 11, 0,textvariable=self.c_Talbot_distance,padx = 20, state='disable')
-        #iterationsL,_ = wg.create_label_combobox(parameters_frame, label_text='Image',row = 8 ,column =0, textvariable = self.c_image_option,names = Image_OPTIONS)
-        #self.ResolutionL,_ = wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 9, 0,textvariable=self.c_resolution,padx = 20)
-        self.RunButton = wg.create_button(parameters_frame, 'Run', 12,0,command = self.RunCheckTL)
-
-        ExitButton = wg.create_button(parameters_frame, "Exit", 13, 0, padx = 60, command=self.close_app)
-        
-        self._watch(c_n_e, self.c_n, lambda v: v > 0)
-        self._watch(c_px_e, self.c_pixel_size, lambda v: v > 0)
-        self._watch(c_fwhm_src_e, self.c_FWHM_source, lambda v: v > 0)
-        self._watch(c_energy_e, self.c_energy, lambda v: v > 0)
-        self._watch(c_period_e, self.c_period, lambda v: v > 0)
-        self._watch(c_dc_e, self.c_DC, lambda v: 0 < v <= 1)
-        self._watch(c_barheight_e, self.c_bar_height, lambda v: self.c_grating_def.get() != "Custom" or v > 0)
-        self._watch(c_multiples_e, self.c_multiple, lambda v: v > 0)
-        self._watch(c_iter_e, self.c_iterations, lambda v: v > 0)
-        self.add_tooltip(nLabel, "Number of pixels of the simulated wavefront (n x n).")
-        self.add_tooltip(pxLabel, "Pixel size of the wavefront grid in micrometers.")
-        self.add_tooltip(FWHMSouLabel, "Full Width at Half Maximum (FWHM) of the source in micrometers.")
-        self.add_tooltip(EnergyL, "Design energy of the setup in keV.")
-        self.add_tooltip(PeriodL, "Period of the gratings in micrometers.")
-        self.add_tooltip(DCL, "Duty Cycle (DC) of the gratings, defined as the ratio between the bar width and the grating period.")
-        self.add_tooltip(materialL, "Material of the grating bars (only used for 'Custom' grating type).")
-        self.add_tooltip(barHeightL, "Height of the grating bars in micrometers (only used for 'Custom' grating type).")
-        self.add_tooltip(gratigL, "Type of grating: 'Custom' allows user-defined parameters, 'Phase pi/2' and 'Phase pi' are standard phase gratings.")
-        self.add_tooltip(multiplesL, "Multiple of Talbot distance (maximum distance).")
-        self.add_tooltip(iterationsL, "Number of distances calculated.")
-        self.add_tooltip(self.RunButton, "Start the Talbot-Lau effect check simulation with the specified parameters.")
-
-        # Auto-update Talbot distance as the user types
-        def _auto_update_checkTL(*_args):
-            try:
-                self.modify_TL_dist(None)
-            except Exception:
-                pass
-
-        for _var in (self.c_energy, self.c_period, self.c_grating_def):
-            try:
-                _var.trace_add("write", _auto_update_checkTL)
-            except Exception:
-                pass
-
-        self.modify_TL_dist(None)
-
-        # Add informational text box
-        font = {'family': 'serif',
-        'color':  'lightgray',
-        'weight': 'normal',
-        'size': 10,
-        }
-        fig_text = Figure(figsize=(5,4))
-        fig_text.set_facecolor("#333333")
-        canvas = FigureCanvasTkAgg(fig_text, parameters_frame)
-        canvas_widget = canvas.get_tk_widget()
-        canvas_widget.grid(row = 11, column = 0, columnspan=3)
-        text = fig_text.text(0.5, 0.5,check_TL_text, ha='center', va='center', bbox=dict(facecolor='#333333', alpha=0.5), fontdict=font)
-        canvas.figure = fig_text
-        canvas.draw()
- 
-        
-    def populate_TL_tab(self):
-        
-        Grating_OPTIONS = ["Phase pi/2", "Phase pi"]
-        Movable_OPTIONS = ["G1", "G2"]
-        
-        scrollframe = vsf(self.TL_tab)
-        scrollframe.grid(row=0, column=0, sticky="nsew")
-        
-        container = scrollframe.interior
-        container.grid_columnconfigure(2, weight=1)
-        
-        self.TL_tab.grid_rowconfigure(0, weight=1)
-        self.TL_tab.grid_columnconfigure(0, weight=0)
-        self.TL_tab.grid_columnconfigure(1, weight=0)
-        self.TL_tab.grid_columnconfigure(2, weight=1)
-        
-        
-        parameters_frame = ttk.Frame(container, style='TFrame')
-        parameters_frame.grid(row = 0, column = 0, columnspan=2,  sticky='nsew')
-        #parameters_frame.bind("<Button-1>", self.modify_DOD)
-        
-        self.TL_results_frame = ttk.Frame(container, style='TFrame')
-        self.TL_results_frame.grid(row = 0, column = 2, rowspan=12,  sticky='nsew')
-        self.TL_results_frame.grid_rowconfigure(0, weight=1)
-        self.TL_results_frame.grid_columnconfigure(0, weight=1)
-
-        self.initialize_Figure(self.TL_results_frame, (5,5), 0,0)
-        
-        nLabel, tl_n_e = wg.create_label_entry(parameters_frame, 'n: size of the wavefront in pixels', 0, 0,textvariable=self.TL_n,padx = 20)
-        pxLabel, tl_px_e = wg.create_label_entry(parameters_frame, 'Pixel size (microns)', 1, 0,textvariable=self.TL_pixel_size,padx = 20)
-        sourceLabel, tl_fwhm_src_e = wg.create_label_entry(parameters_frame, 'Source FWHM (micrometer)', 2, 0,textvariable=self.TL_FWHM_source,padx = 20)
-        beamShapeLabel, _ = wg.create_label_combobox(parameters_frame, label_text='Beam Shape',row = 3 ,column =0, textvariable = self.TL_BeamShape, names = Beam_Shape_OPTIONS)
-        spectrumLabel, _ =wg.create_label_combobox(parameters_frame, label_text='Spectrum',row = 4 ,column =0, textvariable = self.TL_Beam_Spectrum,names = Beam_Spectrum_OPTIONS)
-        energyLabel, tl_energy_e = wg.create_label_entry(parameters_frame, 'Design Energy (keV)', row=5, column=0, textvariable=self.TL_beam_energy, padx = 20)
-        DSG1Label, tl_dsg1_e = wg.create_label_entry(parameters_frame, 'Distance Source-G1 (cm)', 6, 0,textvariable=self.TL_DSO,padx = 20)
-        DOG1Label, tl_dog1_e = wg.create_label_entry(parameters_frame, 'Distance Object-G1 (cm)', 7, 0,textvariable=self.TL_DOG1,padx = 20)
-        multiplesLabel, tl_multiples_e = wg.create_label_entry(parameters_frame, 'Multiple of Talbot distance', 8, 0,textvariable=self.TL_TLmultiple,padx = 20)
-        TalbotDistanceLabel,_ = wg.create_label_entry(parameters_frame, 'Talbot Distance (cm)', 9, 0,textvariable=self.TL_Talbot_distance,padx = 20, state='disable')
-        Magnification,_ = wg.create_label_entry(parameters_frame, 'Magnification', 10, 0,textvariable=self.TL_M,padx = 20, state='disable')
-        DG1G1Label,_ = wg.create_label_entry(parameters_frame, 'Distance G1-G2 (cm)', 11, 0,textvariable=self.TL_DOD,padx = 20, state='disable')
-        G1PeriodLabel, tl_g1period_e = wg.create_label_entry(parameters_frame, 'G1 Period (microns)', 12, 0,textvariable=self.TL_Period_G1,padx = 20)
-        G2PeriodLabel,_ = wg.create_label_entry(parameters_frame, 'G2 Period (microns)', 13, 0,textvariable=self.TL_Period_G2,padx = 20, state = 'disable')
-        G1PhaseLabel,_ = wg.create_label_combobox(parameters_frame, label_text='G1 Phase',row = 14 ,column =0, textvariable = self.TL_G1_Phase,names = Grating_OPTIONS)
-        MovableLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Movable Grating',row = 15 ,column =0, textvariable = self.TL_MovableGrating, names = Movable_OPTIONS)
-        NumberStepsLabel, tl_steps_e = wg.create_label_entry(parameters_frame, 'Number of steps (int)', 16, 0,textvariable=self.TL_steps,padx = 20)
-        StepLenghtLabel, tl_steplength_e = wg.create_label_entry(parameters_frame, 'Step Length (microns)', 17, 0,textvariable=self.TL_step_length,padx = 20)
-        ObjectLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Object',row = 18 ,column =0, textvariable = self.TL_Object,names = Object_OPTIONS)
-        wg.create_button(parameters_frame, 'Set Object Parameters', 19, 0, command = self.open_params_TL)
-        ImageOptionLabel,_ = wg.create_label_combobox(parameters_frame, label_text='Image',row = 20 ,column =0, textvariable = self.TL_image_option,names = Image_OPTIONS)
-        DetectorPXLabel, tl_pxdet_e = wg.create_label_entry(parameters_frame, 'Detector Pixel Size (microns)', 21, 0,textvariable=self.TL_detector_pixel_size,padx = 20)
-        DetectorResolutionLabel, tl_res_e = wg.create_label_entry(parameters_frame, 'Detector Resolution (pixel Size in microns)', 22, 0,textvariable=self.TL_resolution,padx = 20)
-        ToggleButton(parameters_frame, text="Create ZIP with simulation data", variable=self.TL_zip_var).grid(row=23, column=0, pady=5)
-        
-        RunBtton = wg.create_button(parameters_frame, 'Run', 24,0,command = self.RunTL)
-        
-        wg.create_button(parameters_frame, "Save preset", 25, 0, command=self.save_preset_TL)
-        wg.create_button(parameters_frame, "Load preset", 25, 1, command=self.load_preset_TL)
-
-        ExitButton = wg.create_button(parameters_frame, "Exit", 26, 0, padx = 60, command=self.close_app)
-        
-        self.add_detector_post_panel(parameters_frame, mode="tl", row=27)
-        
-        self._watch(tl_n_e, self.TL_n, lambda v: v > 0)
-        self._watch(tl_px_e, self.TL_pixel_size, lambda v: v > 0)
-        self._watch(tl_fwhm_src_e, self.TL_FWHM_source, lambda v: v > 0)
-        self._watch(tl_energy_e, self.TL_beam_energy, lambda v: v > 0)
-        self._watch(tl_dsg1_e, self.TL_DSO, lambda v: v > 0)
-        self._watch(tl_dog1_e, self.TL_DOG1, lambda v: v > 0)
-        self._watch(tl_multiples_e, self.TL_TLmultiple, lambda v: v > 0)
-        self._watch(tl_g1period_e, self.TL_Period_G1, lambda v: v > 0)
-        self._watch(tl_steps_e, self.TL_steps, lambda v: v > 0)
-        self._watch(tl_steplength_e, self.TL_step_length, lambda v: v > 0)
-        self._watch(tl_pxdet_e, self.TL_detector_pixel_size, lambda v: v > 0)
-        self._watch(tl_res_e, self.TL_resolution, lambda v: v > 0)
-        self.add_tooltip(nLabel, "Number of pixels of the simulated wavefront (n x n).")
-        self.add_tooltip(pxLabel, "Pixel size of the wavefront grid in micrometers.")
-        self.add_tooltip(sourceLabel, "Full Width at Half Maximum (FWHM) of the X-ray source in micrometers.")
-        self.add_tooltip(beamShapeLabel, "Beam geometry: 'Plane' = parallel beam, 'Conical' = diverging cone.")
-        self.add_tooltip(spectrumLabel, "Select a spectrum file or 'Monoenergetic' for a single energy.")
-        self.add_tooltip(energyLabel, "Design energy of the setup in keV. Used for Talbot distance calculation.")
-        self.add_tooltip(DSG1Label, "Distance from the source to the first grating (G1) in centimeters.")
-        self.add_tooltip(DOG1Label, "Distance from the object to the first grating (G1) in centimeters.")
-        self.add_tooltip(multiplesLabel, "Multiple of Talbot distance (maximum distance).")
-        self.add_tooltip(TalbotDistanceLabel, "Talbot distance (auto-calculated from energy and G1 period). Read-only.")
-        self.add_tooltip(Magnification, "Geometric magnification factor (auto-calculated from source-to-G1 distance). Read-only.")
-        self.add_tooltip(DG1G1Label, "Distance between G1 and G2 gratings in centimeters (auto-calculated). Read-only.")
-        self.add_tooltip(G1PeriodLabel, "Period of the first grating (G1) in micrometers.")
-        self.add_tooltip(G2PeriodLabel, "Period of the second grating (G2) in micrometers (auto-calculated from G1 period and magnification). Read-only.")
-        self.add_tooltip(G1PhaseLabel, "Phase shift introduced by the first grating (G1).")
-        self.add_tooltip(MovableLabel, "Select which grating (G1 or G2) will be moved during the phase stepping simulation.")
-        self.add_tooltip(NumberStepsLabel, "Number of discrete steps in the phase stepping process.")
-        self.add_tooltip(StepLenghtLabel, "Length of each step in micrometers.")
-        self.add_tooltip(ObjectLabel, "Type of object to simulate: 'Sphere' or 'Cylinder'.")
-        self.add_tooltip(ImageOptionLabel, "Type of image to simulate: 'Ideal' (perfect detector) or 'Realistic' (with detector effects).")
-        self.add_tooltip(DetectorPXLabel, "Pixel size of the detector in micrometers.")
-        self.add_tooltip(DetectorResolutionLabel, "Detector resolution specified as pixel size in micrometers.")
-        self.add_tooltip(RunBtton, "Start the Talbot-Lau phase contrast simulation with the specified parameters.")
-        
-        def _auto_update_TL(*args):
-            self.modify_DOD()
-
-        for var in (
-            self.TL_DSO,
-            self.TL_TLmultiple,
-            self.TL_Period_G1,
-            self.TL_beam_energy,
-            self.TL_BeamShape,
-            self.TL_Beam_Spectrum,
-            self.TL_G1_Phase,
-        ):
-            try:
-                var.trace_add("write", _auto_update_TL)
-            except Exception:
-                pass
-
-        self.modify_DOD()
 
     def initialize_vars(self):
 
-        # OLD
-        #config_path  = os.path.join(os.path.dirname(__file__), "config")
         config_path = resource_path("GUI/config/config_inline.json")
 
-         # Inline
-        self.i_n= tk.IntVar()
-        self.i_pixel_size= tk.DoubleVar()
-        self.i_DSO= tk.DoubleVar()
-        self.i_DOD= tk.DoubleVar()
+        # Inline
+        self.i_n = tk.IntVar()
+        self.i_pixel_size = tk.DoubleVar()
+        self.i_DSO = tk.DoubleVar()
+        self.i_DOD = tk.DoubleVar()
         self.i_FWHM_source = tk.DoubleVar()
-        self.i_Beam_Shape= tk.StringVar()
-        self.i_Beam_Spectrum= tk.StringVar()
+        self.i_Beam_Shape = tk.StringVar()
+        self.i_Beam_Spectrum = tk.StringVar()
         self.i_beam_energy = tk.DoubleVar()
         self.i_Object = tk.StringVar()
         self.i_image_option = tk.StringVar()
         self.i_resolution = tk.IntVar()
-
-        self.i_radius = tk.DoubleVar()
+        self.i_outer_radius = tk.DoubleVar()
         self.i_inner_radius = tk.DoubleVar()
         self.i_xshift = tk.IntVar()
         self.i_yshift = tk.IntVar()
@@ -557,13 +239,10 @@ class PCSim_gui:
         self.i_FWHM_detector = tk.DoubleVar()
         self.i_detector_pixel_size = tk.DoubleVar()
         self.i_zip_var = tk.BooleanVar(value=False)
+        self.inline_objects_summary_var = tk.StringVar(value="No objects configured.")
 
         with open(config_path) as json_path:
-            #default_TLRec_conf = json.load(os.path.join(config_path, 'config_inline.json'))
-
             default_inline_conf = json.load(json_path)
-        
-
             self.i_n.set(default_inline_conf['n'])
             self.i_pixel_size.set(default_inline_conf['pixel_size'])
             self.i_DSO.set(default_inline_conf['DSO'])
@@ -573,7 +252,7 @@ class PCSim_gui:
             self.i_Beam_Spectrum.set(default_inline_conf['Beam_Spectrum'])
             self.i_beam_energy.set(default_inline_conf['energy'])
             self.i_Object.set(default_inline_conf['Object'])
-            self.i_radius.set(default_inline_conf['radius'])
+            self.i_outer_radius.set(default_inline_conf['outer_radius'])
             self.i_inner_radius.set(default_inline_conf['inner_radius'])
             self.i_xshift.set(default_inline_conf['xshift'])
             self.i_yshift.set(default_inline_conf['yshift'])
@@ -582,10 +261,52 @@ class PCSim_gui:
             self.i_orientation.set(default_inline_conf['orientation'])
             self.i_resolution.set(default_inline_conf['resolution'])
             self.i_FWHM_detector.set(default_inline_conf['FWHM_detector'])
-            self.i_detector_pixel_size.set(default_inline_conf['detector_pixel_size']) #um
+            self.i_detector_pixel_size.set(default_inline_conf['detector_pixel_size'])
+
+        self.inline_objects_data = self._normalize_object_specs([
+            self._legacy_inline_object_spec()
+        ], mode="inline")
+        self._sync_inline_legacy_from_objects()
+
+        # Simple Numerical Simulation
+        self.sns_n = tk.IntVar(value=512)
+        self.sns_pixel_size = tk.DoubleVar(value=1.0)
+        self.sns_delta = tk.DoubleVar(value=1e-2)
+        self.sns_beta = tk.DoubleVar(value=1e-6)
+        self.sns_energy = tk.DoubleVar(value=20.0)
+        self.sns_phase_steps = tk.IntVar(value=20)
+        self.sns_noise_mean = tk.DoubleVar(value=0.0)
+        self.sns_error_steps_mean = tk.DoubleVar(value=0.0)
+        self.sns_error_dose_mean = tk.DoubleVar(value=0.0)
+        self.sns_moire = tk.BooleanVar(value=False)
+        self.sns_moire_fringes = tk.IntVar(value=10)
+        self.sns_moire_profile = tk.StringVar(value='linear')
+        self.sns_moire_direction = tk.StringVar(value='x')
+        self.sns_moire_phase_scale = tk.DoubleVar(value=1.0)
+        self.sns_moire_phase_offset = tk.DoubleVar(value=0.0)
+        self.sns_axis = tk.IntVar(value=1)
+        self.sns_df_strength = tk.DoubleVar(value=0.15)
+        self.sns_geometry_type = tk.StringVar(value='sphere')
+        self.sns_geometry_params = tk.StringVar(value='{"radius": 120.0}')
+        self.sns_scene_json_path = tk.StringVar(value='')
+        self.sns_zip_var = tk.BooleanVar(value=False)
+        self.sns_layer_type = tk.StringVar(value='sphere')
+        self.sns_layer_mode = tk.StringVar(value='add')
+        self.sns_layer_shift_x = tk.DoubleVar(value=0.0)
+        self.sns_layer_shift_y = tk.DoubleVar(value=0.0)
+        self.sns_layer_angle = tk.DoubleVar(value=0.0)
+        self.sns_layer_params = tk.StringVar(value='{"radius": 120.0}')
+        self.sns_layer_optics_mode = tk.StringVar(value='global')
+        self.sns_layer_material = tk.StringVar(value='Water')
+        self.sns_layer_delta = tk.DoubleVar(value=1e-2)
+        self.sns_layer_beta = tk.DoubleVar(value=1e-6)
+        self.sns_material_options = sorted(list_available_materials(None))
+        if self.sns_material_options and self.sns_layer_material.get() not in self.sns_material_options:
+            self.sns_layer_material.set(self.sns_material_options[0])
+        self.sns_layers_data = []
+        self.sns_selected_layer_index = None
 
         # Check TL
-
         self.c_n = tk.IntVar()
         self.c_pixel_size = tk.DoubleVar()
         self.c_FWHM_source = tk.DoubleVar()
@@ -599,14 +320,9 @@ class PCSim_gui:
         self.c_grating_def = tk.StringVar()
         self.c_Talbot_distance = tk.DoubleVar()
         self.c_zip_var = tk.BooleanVar(value=False)
-        #self.c_image_option = tk.StringVar()
-        #self.c_resolution = tk.IntVar()
-        
+
         config_path_checkTL = resource_path("GUI/config/config_checkTL.json")
-
         with open(config_path_checkTL) as json_path:
-            #default_TLRec_conf = json.load(os.path.join(config_path, 'config_inline.json'))
-
             default_checkTL_conf = json.load(json_path)
             self.c_n.set(default_checkTL_conf['n'])
             self.c_pixel_size.set(default_checkTL_conf['pixel_size'])
@@ -619,66 +335,53 @@ class PCSim_gui:
             self.c_multiple.set(default_checkTL_conf['multiples'])
             self.c_iterations.set(default_checkTL_conf['iterations'])
             self.c_grating_def.set(default_checkTL_conf['grating_option'])
-            #self.c_image_option.set(default_checkTL_conf['image_option'])
-            #self.c_resolution.set(default_checkTL_conf['resolution'])
 
         # Talbot Lau
         self.TL_n = tk.IntVar()
         self.TL_pixel_size = tk.DoubleVar()
-
         self.TL_FWHM_source = tk.DoubleVar()
         self.TL_BeamShape = tk.StringVar()
-        self.TL_Beam_Spectrum= tk.StringVar()
+        self.TL_Beam_Spectrum = tk.StringVar()
         self.TL_beam_energy = tk.DoubleVar()
-
         self.TL_DSO = tk.DoubleVar()
         self.TL_DOG1 = tk.DoubleVar()
         self.TL_DOD = tk.DoubleVar()
         self.TL_Talbot_distance = tk.DoubleVar()
         self.TL_M = tk.DoubleVar()
         self.TL_TLmultiple = tk.IntVar()
-
         self.TL_Object = tk.StringVar()
         self.TL_radius = tk.DoubleVar()
         self.TL_inner_radius = tk.DoubleVar()
-        self.TL_material= tk.StringVar()
+        self.TL_material = tk.StringVar()
         self.TL_xshift = tk.IntVar()
         self.TL_yshift = tk.IntVar()
         self.TL_orientation = tk.StringVar()
-
-        self.TL_Period_G1 = tk.DoubleVar() 
+        self.TL_Period_G1 = tk.DoubleVar()
         self.TL_Period_G2 = tk.DoubleVar()
-        self.TL_ThicknessG1 = tk.DoubleVar() #um
-        self.TL_ThicknessG2 = tk.DoubleVar() #um
+        self.TL_ThicknessG1 = tk.DoubleVar()
+        self.TL_ThicknessG2 = tk.DoubleVar()
         self.TL_G1_Phase = tk.StringVar()
         self.TL_MovableGrating = tk.StringVar()
         self.TL_steps = tk.IntVar()
         self.TL_step_length = tk.DoubleVar()
-
-        self.TL_resolution = tk.DoubleVar() #um
+        self.TL_resolution = tk.DoubleVar()
         self.TL_detector_pixel_size = tk.IntVar()
         self.TL_image_option = tk.StringVar()
         self.TL_zip_var = tk.BooleanVar(value=False)
-        
+        self.tl_objects_summary_var = tk.StringVar(value="No objects configured.")
+
         config_path_TLSim = resource_path("GUI/config/config_TLSim.json")
-
         with open(config_path_TLSim) as json_path:
-            #default_TLRec_conf = json.load(os.path.join(config_path, 'config_inline.json'))
-
             default_TL_conf = json.load(json_path)
             self.TL_n.set(default_TL_conf['n'])
             self.TL_FWHM_source.set(10.)
             self.TL_pixel_size.set(default_TL_conf['pixel_size'])
-
             self.TL_BeamShape.set(default_TL_conf['Beam_Shape'])
             self.TL_Beam_Spectrum.set(default_TL_conf['Beam_Spectrum'])
             self.TL_beam_energy.set(default_TL_conf['energy'])
-
             self.TL_DSO.set(default_TL_conf['DSG1'])
             self.TL_DOG1.set(default_TL_conf['DOG1'])
-            #self.TL_DOD.set(default_TL_conf['DOD'])
             self.TL_TLmultiple.set(default_TL_conf['TLmultiple'])
-
             self.TL_Object.set(default_TL_conf['Object'])
             self.TL_radius.set(default_TL_conf['radius'])
             self.TL_inner_radius.set(0.)
@@ -686,7 +389,6 @@ class PCSim_gui:
             self.TL_xshift.set(default_TL_conf['xshift'])
             self.TL_yshift.set(default_TL_conf['yshift'])
             self.TL_orientation.set(default_TL_conf['orientation'])
-
             self.TL_Period_G1.set(default_TL_conf['period_G1'])
             self.TL_ThicknessG1.set(default_TL_conf['thickness_G1'])
             self.TL_ThicknessG2.set(default_TL_conf['thickness_G2'])
@@ -694,535 +396,464 @@ class PCSim_gui:
             self.TL_MovableGrating.set(default_TL_conf['MovableGrating'])
             self.TL_steps.set(default_TL_conf['steps'])
             self.TL_step_length.set(default_TL_conf['step_length'])
-
             self.TL_image_option.set(default_TL_conf['image_option'])
             self.TL_resolution.set(default_TL_conf['resolution'])
             self.TL_detector_pixel_size.set(default_TL_conf['detector_pixel_size'])
 
-        # Detector postprocessing without rerunning the simulation
+        self.tl_objects_data = self._normalize_object_specs([
+            self._legacy_tl_object_spec()
+        ], mode="tl")
+        self._sync_tl_legacy_from_objects()
 
+        # Detector post-processing (shared by inline + TL tabs)
         self.dp_pixel_det_um = tk.DoubleVar(value=0.0)
         self.dp_fwhm_det_um = tk.DoubleVar(value=0.0)
         self.dp_noise_type = tk.StringVar(value="gaussian")
-        self.dp_gauss_sigma = tk.DoubleVar(value=0.0) 
+        self.dp_gauss_sigma = tk.DoubleVar(value=0.0)
         self.dp_poisson_N0 = tk.DoubleVar(value=1e5)
-        
-    def RunInline(self):
-        
-        def _run():
-            
-            if not self.verify_physical_values_inline():
-                self.set_status("Error in physical values for Inline simulation.")
-                return
-            
-            self.set_status("Running inline simulation...")
-            n = self.i_n.get()
-            DSO = self.i_DSO.get()
-            DOD = self.i_DOD.get()
-            pixel_size = self.i_pixel_size.get()
-            Beam_Shape = self.i_Beam_Shape.get()
-            FWHM_source = self.i_FWHM_source.get()
-            Beam_Spectrum = os.path.splitext(self.i_Beam_Spectrum.get())[0]
-            beam_energy = self.i_beam_energy.get()
-            Object = self.i_Object.get()
-
-            Material = os.path.splitext(self.i_material.get())[0]
-            image_option = self.i_image_option.get()
-            FWHM_detector = self.i_FWHM_detector.get()
-            detector_pixel_size = self.i_detector_pixel_size.get()
-            
-            #try:
-            #   resolution = self.i_resolution.get()
-            #except:
-            #   resolution = 1
-
-            if Object == 'Sphere':
-                radius = self.i_radius.get()
-                x_shift =  self.i_xshift.get() 
-                y_shift =  self.i_yshift.get()
-                MyObject1 = obj.Sphere(n, radius, pixel_size, Material, DSO, x_shift, y_shift)
-            
-            elif Object == 'Cylinder':
-                outer_radius = self.i_radius.get()
-                inner_radius = self.i_inner_radius.get()
-                x_shift =  self.i_xshift.get() 
-                y_shift =  self.i_yshift.get()
-                Orientation = self.i_orientation.get()
-                MyObject1 = obj.Cylinder(n, outer_radius, inner_radius, Orientation, pixel_size, Material, DSO, x_shift, y_shift)
-            
-            if Beam_Spectrum == 'Monoenergetic':
-                Beam_Spectrum = 'Mono'
-        
-            MySource = source.Source((FWHM_source, FWHM_source),Beam_Spectrum, beam_energy, Beam_Shape, pixel_size)
-            MyDetector = detector.Detector(image_option, detector_pixel_size, FWHM_detector, 'gaussian', pixel_size)
-            MyGeometry = geom.Geometry(DSO+DOD)
-
-            #PSF_source = MySource.Source_PSF((n,n), M)
-
-            Sample = [MyObject1]
-            progress_cb = self.make_progress_callback("Inline simulation")
-            Intensity, Intensity_raw = exp.Experiment_Inline(n, MyGeometry, MySource, MyDetector, Sample, progress_cb=progress_cb, return_raw=True, apply_detector=True)
-            
-            
-            self.inline_raw_intensity = np.asarray(Intensity_raw, dtype=np.float32)
-            self.inline_display_intensity = np.asarray(Intensity, dtype=np.float32)
-            self.inline_raw_px_um = float(self.i_pixel_size.get())
-
-            
-            def update_gui():
-                
-                dual = ttk.Frame(self.i_results_frame, style="TFrame")
-                dual.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-
-                
-                self.i_results_frame.grid_rowconfigure(0, weight=1)
-                self.i_results_frame.grid_columnconfigure(0, weight=1)
-
-                dual.grid_rowconfigure(0, weight=1)
-                dual.grid_columnconfigure(0, weight=1, uniform="dual")
-                dual.grid_columnconfigure(1, weight=1, uniform="dual")
-
-                raw_f  = ttk.Frame(dual, style="TFrame")
-                post_f = ttk.Frame(dual, style="TFrame")
-                raw_f.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
-                post_f.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
-                
-                self.inline_raw_frame  = raw_f
-                self.inline_post_frame = post_f
-
-                self.Plot_Figure(raw_f,  self.inline_raw_intensity,  0, 0, (3, 3), "RAW (Pre-detector)")
-                self.Plot_Figure(post_f, self.inline_display_intensity, 0, 0, (3, 3), "Post-Processing")
-                
-                #self.clear_frame(self.i_results_frame)
-                #self.Plot_Figure(self.i_results_frame, self.inline_display_intensity, 0, 1, (3, 3), 'Post-Processing', columnspan=1)
-                #self.Plot_Figure(self.i_results_frame, self.inline_raw_intensity, 0, 0, (3,3), 'RAW (Pre-detector)', columnspan=1)
-                wg.create_button(raw_f, 'Save Raw Image', 1, 0,
-                                command=lambda: self.save_image(self.inline_raw_intensity))
-                
-                wg.create_button(post_f, 'Save Post-Processed Image', 1, 0,
-                                command=lambda: self.save_image(self.inline_display_intensity))
-
-                if self.i_zip_var.get():
-                    self.export_inline_zip(self.inline_display_intensity)
-
-            self.master.after(0, update_gui)
-            
-            '''
-            self.clear_frame(self.i_results_frame)
-            self.Plot_Figure(self.i_results_frame, Intensity,0,0, (3,3), 'Inline Simulation')
-            bt1 = wg.create_button(self.i_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensity))
-            
-            #
-            if self.i_zip_var.get():
-                self.export_inline_zip(Intensity)
-                
-            self.set_status("Inline simulation finished!")
-            '''
-
-        self.run_with_error_handling(_run, "Running Inline simulation...")
-        
-    def RunCheckTL(self):
-        def _run():
-            #self.set_status("Running Talbot carpet simulation...")
-            if not self.verify_physical_values_checkTL():
-                self.set_status("Error in physical values for Talbot carpet simulation.")
-                return
-            n = self.c_n.get()
-            pixel_size = self.c_pixel_size.get() #um
-            FWHM_source = self.c_FWHM_source.get()
-            Energy = self.c_energy.get() #keV
-            Period = self.c_period.get() # um
-            DC = self.c_DC.get()
-            Material = self.c_material.get()
-            bar_height = self.c_bar_height.get()
-            multiples = self.c_multiple.get()#Multiples of Talbot Distance defined as Dt = 2*p**2/wavelength
-            iterations = self.c_iterations.get()
-            grating_option = self.c_grating_def.get()
-            wavelength = 1.23984193/(1000*Energy) # in um
-
-            MySource = source.Source((FWHM_source, FWHM_source),'Mono', Energy, 'Plane', pixel_size)
-            
-            if grating_option == 'Custom':
-                grating_type = 'custom'
-                title = 'Custom Grating'
-            elif grating_option == 'Phase pi':
-                grating_type = 'phase_pi'
-                bar_height = None
-                Material = None
-                title = 'pi-phase Grating'
-            elif grating_option == 'Phase pi/2':
-                grating_type = 'phase_pi_2'
-                bar_height = None
-                Material = None
-                title = 'pi/2-phase Grating'
-
-            
-            Intensities= check_Talbot.Talbot_carpet(n, MySource, Period, DC, multiples, iterations, grating_type,pixel_size, Energy, material=Material, grating_height= bar_height)
-            self.check_tl_intensities = np.asarray(Intensities, dtype=np.float32)
-            def update_gui():
-                self.clear_frame(self.c_results_frame)
-                self.Plot_check_TL(self.c_results_frame, Intensities, 0, 0, (3,3), title, multiples, n)
-                wg.create_button(self.c_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensities))
-            
-            self.master.after(0, update_gui)
-            
-            '''
-            self.master.after(0, update_gui)
-            self.clear_frame(self.c_results_frame)
-            self.Plot_check_TL(self.c_results_frame, Intensities, 0, 0, (3,3), title, multiples, n)
-            bt1 = wg.create_button(self.c_results_frame, 'Save Image', 1,0, command=  lambda : self.save_image(Intensities))
-            '''
-        
-        self.run_with_error_handling(_run, "Running Talbot carpet simulation...")
-        #self.set_status("Talbot carpet simulation finished!")
-
-    def RunTL(self):
-        def _run():
-            
-            if not self.verify_physical_values_TL():
-                self.set_status("Error in physical values for Talbot-Lau simulation.")
-                return
-            
-            #self.set_status("Running Talbot-Lau simulation...")
-            n = self.TL_n.get()
-            pixel_size = self.TL_pixel_size.get()
-            FWHM_source = self.TL_FWHM_source.get()
-            Beam_Shape = self.TL_BeamShape.get()
-            Beam_Spectrum = os.path.splitext(self.TL_Beam_Spectrum.get())[0]
-            design_energy = self.TL_beam_energy.get()
-
-            DSG1 = self.TL_DSO.get()
-            DOG1 = self.TL_DOG1.get()
-            object = self.TL_Object.get()
-            radius = self.TL_radius.get()
-            inner_radius = self.TL_inner_radius.get()
-            material= os.path.splitext(self.TL_material.get())[0]
-            Period_G1 = self.TL_Period_G1.get()
-            G1_Phase = self.TL_G1_Phase.get()
-            FWHM_detector = self.TL_resolution.get()
-            detector_pixel_size = self.TL_detector_pixel_size.get()
-            xshift = self.TL_xshift.get()
-            yshift = self.TL_yshift.get()
-            image_option = self.TL_image_option.get()
-            DSO = DSG1-DOG1
-            angle = 0
+        self.dp_random_seed = tk.StringVar(value="")
 
 
-            Objects=[]
-            if Beam_Spectrum == 'Monoenergetic':
-                Beam_Spectrum = 'Mono'
-            if G1_Phase == 'Phase pi/2':
-                G1_type = 'phase_pi_2'
-            elif G1_Phase == 'Phase pi':
-                G1_type = 'phase_pi'
+    def apply_changes(self):
+        self._params_window.destroy()
 
-            MySource = source.Source((FWHM_source, FWHM_source),Beam_Spectrum, design_energy, Beam_Shape, pixel_size)
-            mean_energy = MySource.mean_energy
-            mean_wavelength = 1.23984193/(mean_energy*1000)
-            MyDetector = detector.Detector(image_option, detector_pixel_size, FWHM_detector, 'gaussian', pixel_size)
+    def _default_material_name(self):
+        if self.material_file_options:
+            return self.material_file_options[0]
+        return "None"
 
-            configuration = TL_CONFIG(Design_energy = design_energy, G1_Period = Period_G1, DSG1=DSG1, Movable_Grating = self.TL_MovableGrating.get(),
-                                    G1_type = G1_type, TL_multiple = self.TL_TLmultiple.get(), 
-                                    Number_steps = self.TL_steps.get(), Step_length = self.TL_step_length.get(), pixel_size = pixel_size, angle = 0, resolution = FWHM_detector, 
-                                    pixel_detector = detector_pixel_size)
+    def _normalize_material_name(self, material_name):
+        return os.path.splitext(str(material_name).strip())[0]
 
+    def _legacy_inline_object_spec(self):
+        return {
+            "type": self.i_Object.get() or "Sphere",
+            "position_cm": float(self.i_DSO.get()),
+            "outer_radius": float(self.i_outer_radius.get()),
+            "inner_radius": float(self.i_inner_radius.get()),
+            "xshift": int(self.i_xshift.get()),
+            "yshift": int(self.i_yshift.get()),
+            "material": self.i_material.get() or self._default_material_name(),
+            "orientation": self.i_orientation.get() or "Vertical",
+            "is_insert": False,
+        }
 
-            if object == 'Sphere':
-                object1 = obj.Sphere(n, radius, pixel_size, material, DSG1-DOG1, xshift,yshift)
-            
-            elif object == 'Cylinder':
-                orientation = self.TL_orientation.get()
-                object1 = obj.Cylinder(n, radius, inner_radius,orientation,pixel_size, material, DSO = DSG1-DOG1, x_shift_px=xshift, y_shift_px=yshift)
-                
-            Objects=[object1]
-            
-            pixel_size = configuration.pixel_size
-            geometry = geom.Geometry()  
-            distance, G2Period = geometry.calculate_Talbot_distance_and_G2period(MySource, configuration)
-            geometry.DSD  = DSG1+distance
-            configuration.G2_Period = G2Period
-            
-            if DSO -  distance <= 0:
-                # It should not happen in any case due to the calculation of distance, but just in case
-                self.TL_Talbot_distance.set(0.0)
-                self.TL_DOD.set(0.0)
-                self.TL_M.set(0.0)
-                self.TL_Period_G2.set(0.0)
-                self.set_status("Talbot configuration not physically valid for these parameters.")
-                return
+    def _legacy_tl_object_spec(self):
+        return {
+            "type": self.TL_Object.get() or "Sphere",
+            "distance_to_g1_cm": float(self.TL_DOG1.get()),
+            "outer_radius": float(self.TL_radius.get()),
+            "inner_radius": float(self.TL_inner_radius.get()),
+            "xshift": int(self.TL_xshift.get()),
+            "yshift": int(self.TL_yshift.get()),
+            "material": self.TL_material.get() or self._default_material_name(),
+            "orientation": self.TL_orientation.get() or "Vertical",
+            "is_insert": False,
+        }
 
-            G1 = obj.Grating(n , Period_G1, 0.5, pixel_size, 'Si', DSG1, grating_type = G1_type, design_energy = design_energy)
-            G2 = obj.Grating(n , G2Period, 0.5, pixel_size, 'Au', DSG1+distance, 40,grating_type = 'custom', design_energy = design_energy)
-            self.gui_check_grating_sampling(Period_G1 / pixel_size)
-            self.gui_check_grating_sampling(G2Period / pixel_size)
-            self.gui_check_phase_stepping(self.TL_steps.get(), G2Period / pixel_size,self.TL_step_length.get() / pixel_size)
-            
-            progress_cb = self.make_progress_callback("TL simulation")
-            i, ir, i_raw, ir_raw = exp.Experiment_Phase_Stepping(n, MyDetector, MySource, geometry, Objects, G1, G2, configuration, 
-                                                                 padding = 0, progress_cb=progress_cb, return_raw=True, apply_detector=True)
-            
-            # Copy to perform detector's modifications
-            self.TL_raw_i  = np.asarray(i_raw, dtype=np.float32)
-            self.TL_raw_ir = np.asarray(ir_raw, dtype=np.float32)
-            self.TL_i_display  = np.asarray(i, dtype=np.float32)
-            self.TL_ir_display = np.asarray(ir, dtype=np.float32)
-            
-            self.TL_raw_px_um = float(self.TL_detector_pixel_size.get())
-            
-            def update_gui():
-                
-                curve_f = ttk.Frame(self.TL_results_frame, style="TFrame")
-                curve_f.grid(row=0, column=0, columnspan=2, sticky="nsew")
-                self.Plot_Modulation_Curve(curve_f, self.TL_i_display, self.TL_ir_display, 0, 0, (3,3), "Phase Stepping Curve")
-                
-                dual = ttk.Frame(self.TL_results_frame, style="TFrame")
-                dual.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+    def _sort_object_specs(self, objects_data, mode):
+        objects_copy = copy.deepcopy(objects_data)
+        if mode == "inline":
+            return sorted(objects_copy, key=lambda item: float(item.get("position_cm", 0.0)))
+        return sorted(objects_copy, key=lambda item: -float(item.get("distance_to_g1_cm", 0.0)))
 
-                dual.grid_rowconfigure(0, weight=1)
-                dual.grid_columnconfigure(0, weight=1, uniform="dual")
-                dual.grid_columnconfigure(1, weight=1, uniform="dual")
-
-                raw_f  = ttk.Frame(dual, style="TFrame")
-                post_f = ttk.Frame(dual, style="TFrame")
-                raw_f.grid(row=0, column=0, sticky="nsew", padx=(0,5))
-                post_f.grid(row=0, column=1, sticky="nsew", padx=(5,0))
-
-                raw_f.grid_rowconfigure((0,1), weight=1)
-                raw_f.grid_columnconfigure(0, weight=1)
-
-                post_f.grid_rowconfigure((0,1), weight=1)
-                post_f.grid_columnconfigure(0, weight=1)
-
-                self.TL_raw_obj_frame  = ttk.Frame(raw_f)
-                self.TL_raw_ref_frame  = ttk.Frame(raw_f)
-                self.TL_post_obj_frame = ttk.Frame(post_f)
-                self.TL_post_ref_frame = ttk.Frame(post_f)
-
-                self.TL_raw_obj_frame.grid(row=0, column=0, sticky="nsew")
-                self.TL_raw_ref_frame.grid(row=1, column=0, sticky="nsew")
-                self.TL_post_obj_frame.grid(row=0, column=0, sticky="nsew")
-                self.TL_post_ref_frame.grid(row=1, column=0, sticky="nsew")
-                
-                
-                b, self.TL_canvas_raw_obj  = self.make_stack_viewer(raw_f,  "RAW Object")
-                b.grid(row=0, column=0, sticky="nsew")
-
-                b, self.TL_canvas_raw_ref  = self.make_stack_viewer(raw_f,  "RAW Reference")
-                b.grid(row=1, column=0, sticky="nsew")
-
-                b, self.TL_canvas_post_obj = self.make_stack_viewer(post_f, "POST Object")
-                b.grid(row=0, column=0, sticky="nsew")
-
-                b, self.TL_canvas_post_ref = self.make_stack_viewer(post_f, "POST Reference")
-                b.grid(row=1, column=0, sticky="nsew")
-
-                self.stack_viewer_set_stack(self.TL_canvas_raw_obj,  self.TL_raw_i)
-                self.stack_viewer_set_stack(self.TL_canvas_raw_ref,  self.TL_raw_ir)
-                self.stack_viewer_set_stack(self.TL_canvas_post_obj, self.TL_i_display)
-                self.stack_viewer_set_stack(self.TL_canvas_post_ref, self.TL_ir_display)
-                
-                wg.create_button(raw_f, 'Save Raw Object Stack', 2,0, command=  lambda : self.save_stack_image(self.TL_raw_i))
-                wg.create_button(raw_f, 'Save Raw Reference Stack', 3,0, command=  lambda : self.save_stack_image(self.TL_raw_ir))
-                
-                wg.create_button(post_f, 'Save Display Object Stack', 3,0, command=  lambda : self.save_stack_image(self.TL_i_display)) 
-                wg.create_button(post_f, 'Save Display Reference Stack', 2,0, command=  lambda : self.save_stack_image(self.TL_ir_display))
-                bt3 = wg.create_button(self.TL_results_frame, 'Send to TLRec', 4, 0,command=lambda: self.send_to_TLREC(self.TL_i_display, self.TL_ir_display))
-            
-                if self.TL_zip_var.get():
-                    self.export_TL_zip(self.TL_i_display, self.TL_ir_display)
-                
-            self.master.after(0, update_gui)
-            
-            '''
-            self.clear_frame(self.TL_results_frame)
-            self.Plot_Modulation_Curve(self.TL_results_frame, i, ir, 0, 0, (3,3), 'Phase Stepping Curve', columnspan=2)
-            self.Plot_Figure(self.TL_results_frame, i[0,:,:], 1, 0, (3,3), 'One Projection', columnspan=2)
-            bt1 = wg.create_button(self.TL_results_frame, 'Save Stack Object Images', 2,0, command=  lambda : self.save_stack_image(i))
-            bt2 = wg.create_button(self.TL_results_frame, 'Save Stack Reference Images', 2,1, command=  lambda : self.save_stack_image(ir))
-            
-            if self.TL_zip_var.get():
-                self.export_TL_zip(i, ir)
-            '''
-        
-        self.run_with_error_handling(_run, "Running Talbot-Lau simulation...")
-        
-        
-        #self.set_status("Talbot-Lau simulation finished!")
-        #DPC, Phase, At, Transmission, DF = DPC_Retrieval(ib, ibr, G2Period, DSO, distance,0,mean_energy)
-
-    def modify_DOD(self, event=None):
-        #print('Hola')
-        DSO = self.TL_DSO.get()
-        Period_G1 = self.TL_Period_G1.get()
-        Talbot_multiple = self.TL_TLmultiple.get()
-        FWHM_source = self.TL_FWHM_source.get()
-        Spectrum = os.path.splitext(self.TL_Beam_Spectrum.get())[0]
-        energy = self.TL_beam_energy.get()
-        pixel_size = self.TL_pixel_size.get()
-        G1_Phase = self.TL_G1_Phase.get()
-        Beam_Shape = self.TL_BeamShape.get()
-        
-        if Period_G1 <= 0 or energy <= 0 or DSO <= 0 or Talbot_multiple <= 0:
-            #print('Nope')
-            return
-
-        if Spectrum == 'Monoenergetic':
-            Spectrum = 'Mono'
-
-        Source = source.Source((FWHM_source, FWHM_source),Spectrum, energy, Beam_Shape, pixel_size)
-       
-        mean_energy = Source.mean_energy
-        mean_wavelength = 1.23984193/(mean_energy*1000)
-        
-        if Beam_Shape == 'Conical':
-            if G1_Phase == 'Phase pi':
-            
-                distance_Talbot = Period_G1**2/(8*mean_wavelength)*10**(-4)
-                distance = DSO*Talbot_multiple*distance_Talbot/(DSO-Talbot_multiple*distance_Talbot)
-                M = (DSO+distance)/DSO
-                G2Period =Period_G1*M/2 # pi
-            elif G1_Phase == 'Phase pi/2':
-                distance_Talbot = Period_G1**2/(2*mean_wavelength)*10**(-4) #pi/2
-                distance = DSO*Talbot_multiple*distance_Talbot/(DSO-Talbot_multiple*distance_Talbot)
-                M = (DSO+distance)/DSO
-                G2Period =Period_G1*M # pi/2
-                
-            else:
-                return
-
-        if Beam_Shape == 'Plane': 
-            M =1
-            if G1_Phase == 'Phase pi':
-                G2Period = Period_G1/2
-                distance = Period_G1**2/(8*mean_wavelength)*10**(-4)
-                distance_Talbot = distance
-            elif G1_Phase == 'Phase pi/2':
-                G2Period = Period_G1
-                distance = Period_G1**2/(2*mean_wavelength)*10**(-4)
-                distance_Talbot = distance
-            else:
-                return
+    def _normalize_object_specs(self, objects_data, mode):
+        if mode == "inline":
+            fallback = self._legacy_inline_object_spec()
+            position_key = "position_cm"
         else:
+            fallback = self._legacy_tl_object_spec()
+            position_key = "distance_to_g1_cm"
+
+        normalized = []
+        for raw in objects_data or []:
+            if not isinstance(raw, dict):
+                continue
+            normalized.append({
+                "type": str(raw.get("type", fallback["type"])).strip() or fallback["type"],
+                position_key: float(raw.get(position_key, fallback[position_key])),
+                "outer_radius": float(raw.get("outer_radius", fallback["outer_radius"])),
+                "inner_radius": float(raw.get("inner_radius", fallback["inner_radius"])),
+                "xshift": int(raw.get("xshift", fallback["xshift"])),
+                "yshift": int(raw.get("yshift", fallback["yshift"])),
+                "material": str(raw.get("material", fallback["material"])).strip() or fallback["material"],
+                "orientation": str(raw.get("orientation", fallback["orientation"])).strip() or fallback["orientation"],
+                "is_insert": bool(raw.get("is_insert", fallback.get("is_insert", False))),
+            })
+
+        if not normalized:
+            normalized = [fallback]
+
+        return self._sort_object_specs(normalized, mode)
+
+    def _format_sim_object_display(self, spec, idx, mode):
+        object_type = spec.get("type", "Sphere")
+        material = self._normalize_material_name(spec.get("material", "")) or "?"
+        radius = float(spec.get("outer_radius", 0.0))
+        if object_type == "Cylinder":
+            geometry_txt = (
+                f"Cylinder Ro={radius:.2f} um, Ri={float(spec.get('inner_radius', 0.0)):.2f} um, "
+                f"{spec.get('orientation', 'Vertical')}"
+            )
+        else:
+            geometry_txt = f"Sphere R={radius:.2f} um"
+
+        if mode == "inline":
+            position_txt = f"z={float(spec.get('position_cm', 0.0)):.3f} cm"
+        else:
+            position_txt = f"DOG1={float(spec.get('distance_to_g1_cm', 0.0)):.3f} cm"
+
+        insert_tag = " | insert" if bool(spec.get("is_insert", False)) else ""
+        return f"{idx + 1:02d} | {position_txt} | {geometry_txt} | {material}{insert_tag}"
+
+    def _objects_summary_text(self, objects_data, mode):
+        if not objects_data:
+            return "No objects configured."
+        if len(objects_data) == 1:
+            return self._format_sim_object_display(objects_data[0], 0, mode)
+        return f"{len(objects_data)} objects. First: {self._format_sim_object_display(objects_data[0], 0, mode)}"
+
+    def _sync_inline_legacy_from_objects(self):
+        self.inline_objects_data = self._normalize_object_specs(self.inline_objects_data, mode="inline")
+        primary = self.inline_objects_data[0]
+        self.i_Object.set(primary["type"])
+        self.i_DSO.set(float(primary["position_cm"]))
+        self.i_outer_radius.set(float(primary["outer_radius"]))
+        self.i_inner_radius.set(float(primary["inner_radius"]))
+        self.i_xshift.set(int(primary["xshift"]))
+        self.i_yshift.set(int(primary["yshift"]))
+        self.i_material.set(primary["material"])
+        self.i_orientation.set(primary["orientation"])
+        self.inline_objects_summary_var.set(self._objects_summary_text(self.inline_objects_data, mode="inline"))
+
+    def _sync_tl_legacy_from_objects(self):
+        self.tl_objects_data = self._normalize_object_specs(self.tl_objects_data, mode="tl")
+        primary = self.tl_objects_data[0]
+        self.TL_Object.set(primary["type"])
+        self.TL_DOG1.set(float(primary["distance_to_g1_cm"]))
+        self.TL_radius.set(float(primary["outer_radius"]))
+        self.TL_inner_radius.set(float(primary["inner_radius"]))
+        self.TL_xshift.set(int(primary["xshift"]))
+        self.TL_yshift.set(int(primary["yshift"]))
+        self.TL_material.set(primary["material"])
+        self.TL_orientation.set(primary["orientation"])
+        self.tl_objects_summary_var.set(self._objects_summary_text(self.tl_objects_data, mode="tl"))
+
+    def _validate_object_spec(self, spec, mode):
+        object_type = str(spec.get("type", "")).strip()
+        outer_radius = float(spec.get("outer_radius", 0.0))
+        inner_radius = float(spec.get("inner_radius", 0.0))
+        material = str(spec.get("material", "")).strip()
+
+        if object_type not in self.Object_OPTIONS:
+            raise ValueError(f"Unsupported object type: {object_type}")
+        if not material or material == "None":
+            raise ValueError("Each object requires a material.")
+
+        if mode == "inline":
+            position_cm = float(spec.get("position_cm", 0.0))
+            detector_z = float(self.i_DSO.get()) + float(self.i_DOD.get())
+            if position_cm <= 0:
+                raise ValueError("Inline object position must be > 0 cm.")
+            if detector_z > 0 and position_cm >= detector_z:
+                raise ValueError("Inline object position must be before the detector plane.")
+        else:
+            dog1_cm = float(spec.get("distance_to_g1_cm", 0.0))
+            dsg1_cm = float(self.TL_DSO.get())
+            if dog1_cm <= 0:
+                raise ValueError("TL object distance to G1 must be > 0 cm.")
+            if dsg1_cm > 0 and dog1_cm >= dsg1_cm:
+                raise ValueError("TL object distance to G1 must be smaller than Source-G1 distance.")
+
+        if object_type == "Sphere":
+            if outer_radius <= 0:
+                raise ValueError("Sphere radius must be > 0.")
+            if inner_radius < 0:
+                raise ValueError("Sphere inner radius cannot be negative.")
+            if inner_radius >= outer_radius:
+                raise ValueError("Sphere inner radius must be smaller than outer radius.")
             return
 
-        self.TL_Talbot_distance.set(distance_Talbot)
-        self.TL_Period_G2.set(G2Period)
-        self.TL_DOD.set(distance)
-        self.TL_M.set(M)
+        if outer_radius <= 0:
+            raise ValueError("Cylinder outer radius must be > 0.")
+        if inner_radius < 0:
+            raise ValueError("Cylinder inner radius cannot be negative.")
+        if inner_radius >= outer_radius:
+            raise ValueError("Cylinder inner radius must be smaller than outer radius.")
+        if str(spec.get("orientation", "")).strip() not in ("Horizontal", "Vertical"):
+            raise ValueError("Cylinder orientation must be Horizontal or Vertical.")
 
-    def modify_TL_dist(self, event=None):
-        
-        Period_G1 = self.c_period.get()
+    def _validate_object_collection(self, objects_data, mode):
+        if not objects_data:
+            raise ValueError("Configure at least one object.")
+        for spec in self._normalize_object_specs(objects_data, mode):
+            self._validate_object_spec(spec, mode)
 
-        energy = self.c_energy.get()
-        grating = self.c_grating_def.get()
-        mean_wavelength = 1.23984193/(energy*1000)
-        
-        if grating == 'Absorption':
-            G2Period = Period_G1
-            distance = 2*Period_G1**2/(mean_wavelength)*10**(-4)
-            distance_Talbot = distance
+    def _build_inline_objects(self, n, pixel_size):
+        objects = []
+        for spec in self._normalize_object_specs(self.inline_objects_data, mode="inline"):
+            material = self._normalize_material_name(spec["material"])
+            if spec["type"] == "Sphere":
+                current = obj.Sphere(
+                    n, spec["inner_radius"], spec["outer_radius"], pixel_size, material,
+                    spec["position_cm"], spec["xshift"], spec["yshift"],
+                )
+            else:
+                current = obj.Cylinder(
+                    n, spec["outer_radius"], spec["inner_radius"], spec["orientation"],
+                    pixel_size, material, spec["position_cm"], spec["xshift"], spec["yshift"],
+                )
+            current.is_insert = bool(spec.get("is_insert", False))
+            objects.append(current)
+        return objects
 
-        elif grating == 'Phase pi':
-            G2Period = Period_G1/2
-            distance = Period_G1**2/(8*mean_wavelength)*10**(-4)
-            distance_Talbot = distance
-        elif grating == 'Phase pi/2':
-            G2Period = Period_G1
-            distance = Period_G1**2/(2*mean_wavelength)*10**(-4)
-            distance_Talbot = distance
+    def _build_tl_objects(self, n, pixel_size, dsg1_cm):
+        objects = []
+        for spec in self._normalize_object_specs(self.tl_objects_data, mode="tl"):
+            material = self._normalize_material_name(spec["material"])
+            dso_cm = float(dsg1_cm) - float(spec["distance_to_g1_cm"])
+            if spec["type"] == "Sphere":
+                current = obj.Sphere(
+                    n, spec["inner_radius"], spec["outer_radius"], pixel_size, material,
+                    dso_cm, spec["xshift"], spec["yshift"],
+                )
+            else:
+                current = obj.Cylinder(
+                    n, spec["outer_radius"], spec["inner_radius"], spec["orientation"],
+                    pixel_size, material, dso_cm, spec["xshift"], spec["yshift"],
+                )
+            current.is_insert = bool(spec.get("is_insert", False))
+            objects.append(current)
+        return objects
 
-        self.c_Talbot_distance.set(distance_Talbot)
-        #self.c_Period_G2.set(G2Period)
+    def _open_object_manager(self, mode):
+        if mode == "inline":
+            title = "Inline Object Manager"
+            position_label = "Position from source (cm)"
+            position_key = "position_cm"
+            working_objects = self._normalize_object_specs(self.inline_objects_data, mode="inline")
+            commit_changes = lambda data: self._commit_inline_objects(data)
+            fallback_spec = self._legacy_inline_object_spec()
+        else:
+            title = "TL Object Manager"
+            position_label = "Distance Object-G1 (cm)"
+            position_key = "distance_to_g1_cm"
+            working_objects = self._normalize_object_specs(self.tl_objects_data, mode="tl")
+            commit_changes = lambda data: self._commit_tl_objects(data)
+            fallback_spec = self._legacy_tl_object_spec()
+
+        window = tk.Toplevel(self.master)
+        window.title(title)
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(0, weight=1)
+
+        root = ttk.Frame(window, padding=10)
+        root.grid(row=0, column=0, sticky="nsew")
+        root.grid_columnconfigure(0, weight=1)
+        root.grid_columnconfigure(1, weight=1)
+        root.grid_rowconfigure(0, weight=1)
+
+        list_frame = ttk.LabelFrame(root, text="Configured objects", padding=8)
+        list_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        list_frame.grid_columnconfigure(0, weight=1)
+        list_frame.grid_rowconfigure(0, weight=1)
+
+        listbox = tk.Listbox(
+            list_frame,
+            height=10,
+            exportselection=False,
+            bg="#2a2a2a",
+            fg="white",
+            selectbackground="#555555",
+            selectforeground="white",
+        )
+        listbox.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 8))
+
+        editor = ttk.LabelFrame(root, text="Object editor", padding=8)
+        editor.grid(row=0, column=1, sticky="nsew")
+        editor.grid_columnconfigure(1, weight=1)
+
+        type_var = tk.StringVar(value=fallback_spec["type"])
+        position_var = tk.DoubleVar(value=float(fallback_spec[position_key]))
+        outer_radius_var = tk.DoubleVar(value=float(fallback_spec["outer_radius"]))
+        inner_radius_var = tk.DoubleVar(value=float(fallback_spec["inner_radius"]))
+        xshift_var = tk.IntVar(value=int(fallback_spec["xshift"]))
+        yshift_var = tk.IntVar(value=int(fallback_spec["yshift"]))
+        material_var = tk.StringVar(value=fallback_spec["material"] or self._default_material_name())
+        orientation_var = tk.StringVar(value=fallback_spec["orientation"])
+        is_insert_var = tk.BooleanVar(value=bool(fallback_spec.get("is_insert", False)))
+
+        wg.create_label_combobox(editor, "Geometry", self.Object_OPTIONS, 0, 0, textvariable=type_var)
+        wg.create_label_entry(editor, position_label, 1, 0, textvariable=position_var)
+        wg.create_label_entry(editor, "Radius / outer radius (um)", 2, 0, textvariable=outer_radius_var)
+        wg.create_label_entry(editor, "Inner radius (um)", 3, 0, textvariable=inner_radius_var)
+        wg.create_label_combobox(editor, "Orientation", ["Horizontal", "Vertical"], 4, 0, textvariable=orientation_var)
+        wg.create_label_entry(editor, "X shift (pixels)", 5, 0, textvariable=xshift_var)
+        wg.create_label_entry(editor, "Y shift (pixels)", 6, 0, textvariable=yshift_var)
+        wg.create_label_combobox(editor, "Material", self.material_file_options, 7, 0, textvariable=material_var)
+        ttk.Checkbutton(editor, text="Use as insert (replace base thickness)", variable=is_insert_var).grid(
+            row=8, column=0, columnspan=2, sticky="w", padx=10, pady=(6, 0)
+        )
+
+        validation_var = tk.StringVar(value="")
+        validation_lbl = ttk.Label(
+            editor, textvariable=validation_var,
+            foreground="tomato", wraplength=230, justify="left"
+        )
+        validation_lbl.grid(row=9, column=0, columnspan=2, sticky="ew", padx=10, pady=(4, 0))
+
+        selected_index = {"value": 0 if working_objects else None}
+
+        def editor_from_spec(spec):
+            type_var.set(spec.get("type", fallback_spec["type"]))
+            position_var.set(float(spec.get(position_key, fallback_spec[position_key])))
+            outer_radius_var.set(float(spec.get("outer_radius", fallback_spec["outer_radius"])))
+            inner_radius_var.set(float(spec.get("inner_radius", fallback_spec["inner_radius"])))
+            xshift_var.set(int(spec.get("xshift", fallback_spec["xshift"])))
+            yshift_var.set(int(spec.get("yshift", fallback_spec["yshift"])))
+            material_var.set(spec.get("material", fallback_spec["material"]))
+            orientation_var.set(spec.get("orientation", fallback_spec["orientation"]))
+            is_insert_var.set(bool(spec.get("is_insert", fallback_spec.get("is_insert", False))))
+
+        def spec_from_editor():
+            return {
+                "type": type_var.get().strip() or fallback_spec["type"],
+                position_key: float(position_var.get()),
+                "outer_radius": float(outer_radius_var.get()),
+                "inner_radius": float(inner_radius_var.get()),
+                "xshift": int(xshift_var.get()),
+                "yshift": int(yshift_var.get()),
+                "material": material_var.get().strip() or self._default_material_name(),
+                "orientation": orientation_var.get().strip() or "Vertical",
+                "is_insert": bool(is_insert_var.get()),
+            }
+
+        def refresh_listbox():
+            nonlocal working_objects
+            working_objects = self._sort_object_specs(working_objects, mode)
+            listbox.delete(0, tk.END)
+            for idx, spec in enumerate(working_objects):
+                listbox.insert(tk.END, self._format_sim_object_display(spec, idx, mode))
+            if working_objects:
+                current = selected_index["value"]
+                if current is None or current >= len(working_objects):
+                    current = 0
+                selected_index["value"] = current
+                listbox.selection_clear(0, tk.END)
+                listbox.selection_set(current)
+                listbox.activate(current)
+                editor_from_spec(working_objects[current])
+            else:
+                selected_index["value"] = None
+                editor_from_spec(fallback_spec)
+
+        def add_object():
+            try:
+                spec = spec_from_editor()
+                self._validate_object_spec(spec, mode)
+            except Exception as exc:
+                messagebox.showerror("Object error", str(exc), parent=window)
+                return
+            working_objects.append(spec)
+            selected_index["value"] = len(working_objects) - 1
+            refresh_listbox()
+
+        def update_object():
+            if selected_index["value"] is None:
+                messagebox.showwarning("Object manager", "Select an object first.", parent=window)
+                return
+            try:
+                spec = spec_from_editor()
+                self._validate_object_spec(spec, mode)
+            except Exception as exc:
+                messagebox.showerror("Object error", str(exc), parent=window)
+                return
+            working_objects[selected_index["value"]] = spec
+            refresh_listbox()
+
+        def remove_object():
+            if selected_index["value"] is None:
+                return
+            del working_objects[selected_index["value"]]
+            refresh_listbox()
+
+        def on_select(_event=None):
+            selection = listbox.curselection()
+            if not selection:
+                return
+            selected_index["value"] = int(selection[0])
+            editor_from_spec(working_objects[selected_index["value"]])
+
+        def apply_manager_changes():
+            try:
+                self._validate_object_collection(working_objects, mode)
+            except Exception as exc:
+                messagebox.showerror("Object error", str(exc), parent=window)
+                return
+            commit_changes(working_objects)
+            window.destroy()
+
+        listbox.bind("<<ListboxSelect>>", on_select)
+        btn_add = wg.create_button(list_frame, "Add", 1, 0, command=add_object)
+        btn_update = wg.create_button(list_frame, "Update", 1, 1, command=update_object)
+        wg.create_button(list_frame, "Remove", 2, 0, command=remove_object)
+        wg.create_button(list_frame, "Apply", 2, 1, command=apply_manager_changes)
+
+        def _validate_editor(*_):
+            try:
+                spec = spec_from_editor()
+                self._validate_object_spec(spec, mode)
+                validation_var.set("")
+                btn_add.state(["!disabled"])
+                btn_update.state(["!disabled"])
+            except Exception as exc:
+                validation_var.set(str(exc))
+                btn_add.state(["disabled"])
+                btn_update.state(["disabled"])
+
+        for _v in (type_var, position_var, outer_radius_var, inner_radius_var,
+                 xshift_var, yshift_var, material_var, orientation_var, is_insert_var):
+            _v.trace_add("write", _validate_editor)
+
+        refresh_listbox()
+        _validate_editor()
+
+    def _commit_inline_objects(self, objects_data):
+        self.inline_objects_data = self._normalize_object_specs(objects_data, mode="inline")
+        self._sync_inline_legacy_from_objects()
+
+    def _commit_tl_objects(self, objects_data):
+        self.tl_objects_data = self._normalize_object_specs(objects_data, mode="tl")
+        self._sync_tl_legacy_from_objects()
 
 
-
-    def Plot_Modulation_Curve(self, frame, image, image_reference,row, column, figsize, title, columnspan=1):
-        
-        params = {"text.color" : "white",
-          "xtick.color" : "white",
-          "ytick.color" : "white",
-          "axes.labelcolor": "white",
-          "axes.grid": True,
-          #"legend.labelcolor": 'black'
-          }
-        rcParams.update(params)
-        
-        fig=Figure(figsize=figsize)
-        fig.set_facecolor("#333333")
-        ax = fig.add_subplot(1,1,1)
-        
-        im = ax.plot(image[:, image.shape[1]//2, image.shape[2]//2], color = 'red', label='Object')
-        im = ax.plot(image_reference[:, image_reference.shape[1]//2, image_reference.shape[2]//2], color='blue', label='Reference')
-        ax.legend()
-        ax.set_title(title)
-        ax.set_xlabel('Phase Stepping')
-        #fig
-        #plt.show()
-        canvas1 = FigureCanvasTkAgg(fig, master=frame)
-        canvas1.draw()
-        canvas1.get_tk_widget().grid(row=row, column=column,columnspan=columnspan,ipadx=90, ipady=20)
-        #toolbarFrame1 = tk.Frame(master=frame)
-        #toolbarFrame1.grid(row=row+1,column=column)
-
-    def Plot_check_TL(self, frame, image, row, column, figsize, title, multiples, n):
-        
-        params = {"text.color" : "white",
-          "xtick.color" : "white",
-          "ytick.color" : "white",
-          "axes.grid": False,
-          "axes.labelcolor": "white"}
-        rcParams.update(params)
-
-        fig=Figure(figsize=figsize)
-        fig.set_facecolor("#333333")
-        ax = fig.add_subplot(1,1,1)
-        
-        im = ax.imshow(image,"gray",interpolation='none', extent=[0,multiples,n,0], aspect='auto')
-        ax.set_title(title)
-        ax.set_xlabel('Multiples of Talbot distance')
-        fig.colorbar(im,ax=ax)
-        fig.tight_layout()
-
-        canvas1 = FigureCanvasTkAgg(fig, master=frame)
-        canvas1.draw()
-        canvas1.get_tk_widget().grid(row=row, column=column, ipadx=90, ipady=20)
-
-    
-    def initialize_Figure(self, frame, figsize, row, column, columnspan = 1):
-
-        fig = Figure(figsize = figsize)
+    def initialize_Figure(self, frame, figsize, row, column, columnspan=1):
+        fig = Figure(figsize=figsize)
         canvas = FigureCanvasTkAgg(fig, master=frame)
         fig.set_facecolor("#333333")
-
         canvas.draw()
         w = canvas.get_tk_widget()
-        w.grid(row = row, column = column, columnspan=columnspan, padx=5, pady=5, sticky = 'nsew')
+        w.grid(row=row, column=column, columnspan=columnspan, padx=5, pady=5, sticky='nsew')
         frame.grid_rowconfigure(row, weight=1)
         frame.grid_columnconfigure(column, weight=1)
 
-
     def Plot_Figure(self, frame, image, row, column, figsize, title, columnspan=1):
-        
-        # clean
         for w in frame.winfo_children():
             if isinstance(w, tk.Canvas):
                 w.destroy()
-            
+
         params = {
-        "text.color": "white",
-        "xtick.color": "white",
-        "ytick.color": "white",
-        "axes.grid": False,
-        "axes.labelcolor": "white",
+            "text.color": "white",
+            "xtick.color": "white",
+            "ytick.color": "white",
+            "axes.grid": False,
+            "axes.labelcolor": "white",
         }
         rcParams.update(params)
 
         fig = Figure(figsize=figsize)
         fig.set_facecolor("#333333")
-        
         ax = fig.add_subplot(1, 1, 1)
-
         im = ax.imshow(image, "gray")
         ax.set_title(title)
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -1232,12 +863,11 @@ class PCSim_gui:
         canvas1.draw()
         w = canvas1.get_tk_widget()
         w.grid(row=row, column=column, columnspan=columnspan, padx=5, pady=5, sticky="nsew")
-       
+
         frame.grid_rowconfigure(row, weight=1)
         frame.grid_columnconfigure(column, weight=1)
         frame.update_idletasks()
-        
-            
+
         def _redraw(evt=None):
             try:
                 canvas1.draw_idle()
@@ -1246,303 +876,47 @@ class PCSim_gui:
 
         frame.update_idletasks()
         frame.after_idle(_redraw)
-        
+
         if not getattr(frame, "_mpl_cfg_bound", False):
             frame.bind("<Configure>", _redraw)
             frame._mpl_cfg_bound = True
 
-    
-        '''
-        plt.close()
-        params = {"text.color" : "white",
-          "xtick.color" : "white",
-          "ytick.color" : "white",
-          "axes.grid": False,
-          "axes.labelcolor": "white"}
-        plt.rcParams.update(params)
-        plt.tight_layout()
-
-        fig=Figure(figsize=figsize)
-        fig.set_facecolor("#333333")
-        ax = fig.add_subplot(1,1,1)
-        
-        im = ax.imshow(image,"gray")
-        ax.set_title(title)
-        fig.colorbar(im,ax=ax)
-        #plt.show()
-        canvas1 = FigureCanvasTkAgg(fig, master=frame)
-        canvas1.draw()
-        canvas1.get_tk_widget().grid(row=row, column=column, columnspan=columnspan, ipadx=90, ipady=20)
-        toolbarFrame1 = tk.Frame(master=frame)
-        toolbarFrame1.grid(row=row+1,column=column)
-        '''
-
-    def open_params(self):
-
-        global params_window
-        params_window = tk.Toplevel()
-        params_window.title("Object Parameters")
-
-        paramsFrame = ttk.Frame(params_window)
-        paramsFrame.grid(row=0, column=0, sticky="ns")
-        
-        if self.i_Object.get() == 'Sphere':
-            radiusL,_ = wg.create_label_entry(paramsFrame, "Radius (micrometer):", 0, 0,textvariable=self.i_radius)
-            xshiftL,_ = wg.create_label_entry(paramsFrame, "X-direction shift (pixels):", 1, 0,textvariable=self.i_xshift)
-            yshiftL,_ = wg.create_label_entry(paramsFrame, "Y-direction shift (pixels):", 2, 0,textvariable=self.i_yshift)
-
-        elif self.i_Object.get() == 'Cylinder':
-            ORIENTATION_OPTIONS = ['Horizontal', 'Vertical']
-            radiusL,_ = wg.create_label_entry(paramsFrame, "Outer radius (micrometer):", 0, 0,textvariable=self.i_radius)
-            IradiusL,_ = wg.create_label_entry(paramsFrame, "Inner radius (micrometer):", 1, 0,textvariable=self.i_inner_radius)
-            xshiftL,_ = wg.create_label_entry(paramsFrame, "X-direction shift (pixels):", 2, 0,textvariable=self.i_xshift)
-            yshiftL,_ = wg.create_label_entry(paramsFrame, "Y-direction shift (pixels):", 3, 0,textvariable=self.i_yshift)
-            orientationL,_ = wg.create_label_combobox(paramsFrame, 'Orientation', ORIENTATION_OPTIONS, 4,0,textvariable=self.i_orientation)
-            
-        
-        complex_refractive_index_path = resource_path("Resources/complex_refractive_index")
-        materialL,_ = wg.create_label_file_combobox(paramsFrame,'Material', complex_refractive_index_path,5,0, self.i_material)
-        
-
-        ApplyButton = wg.create_button(paramsFrame, 'Apply Changes', 9,0 ,padx = 20, pady= 10, command = self.apply_changes)
-        
-    def apply_changes(self):
-        params_window.destroy()
-
-    def open_params_TL(self):
-        global params_window
-        params_window = tk.Toplevel()
-        params_window.title("Object Parameters")
-        paramsFrame = ttk.Frame(params_window)
-        paramsFrame.grid(row=0, column=0, sticky="ns")
-
-        if self.TL_Object.get() == 'Sphere':
-            radiusL,_ = wg.create_label_entry(paramsFrame, "Radius (micrometer):", 0, 0,textvariable=self.TL_radius)
-            xshiftL,_ = wg.create_label_entry(paramsFrame, "X-direction shift (pixels):", 1, 0,textvariable=self.TL_xshift)
-            yshiftL,_ = wg.create_label_entry(paramsFrame, "Y-direction shift (pixels):", 2, 0,textvariable=self.TL_yshift)
-        elif self.TL_Object.get() == 'Cylinder':
-            ORIENTATION_OPTIONS = ['Horizontal', 'Vertical']
-            radiusL,_ = wg.create_label_entry(paramsFrame, "Outer radius (micrometer):", 0, 0,textvariable=self.TL_radius)
-            radiusL,_ = wg.create_label_entry(paramsFrame, "Inner radius (micrometer):", 1, 0,textvariable=self.TL_inner_radius)
-            xshiftL,_ = wg.create_label_entry(paramsFrame, "X-direction shift (pixels):", 2, 0,textvariable=self.TL_xshift)
-            yshiftL,_ = wg.create_label_entry(paramsFrame, "Y-direction shift (pixels):", 3, 0,textvariable=self.TL_yshift)
-            orientationL,_ = wg.create_label_combobox(paramsFrame, 'Orientation', ORIENTATION_OPTIONS, 4,0,textvariable=self.TL_orientation)
-
-        complex_refractive_index_path = resource_path("Resources/complex_refractive_index")
-        materialL,_ = wg.create_label_file_combobox(paramsFrame,'Material', complex_refractive_index_path,5,0, self.TL_material)
-        ApplyButton = wg.create_button(paramsFrame, 'Apply Changes', 9,0 ,padx = 20, pady= 10, command = self.apply_changes)
-        
-    def save_preset_TL(self):
-        params = {
-            "type": "TL_SIM",
-            "n": self.TL_n.get(),
-            "pixel_size": self.TL_pixel_size.get(),
-            "FWHM_source": self.TL_FWHM_source.get(),
-            "Beam_Shape": self.TL_BeamShape.get(),
-            "Beam_Spectrum": self.TL_Beam_Spectrum.get(),
-            "energy": self.TL_beam_energy.get(),
-            "DSO": self.TL_DSO.get(),
-            "DOG1": self.TL_DOG1.get(),
-            "Period_G1": self.TL_Period_G1.get(),
-            "G1_Phase": self.TL_G1_Phase.get(),
-            "steps": self.TL_steps.get(),
-            "step_length": self.TL_step_length.get(),
-            "Object": self.TL_Object.get(),
-            "radius": self.TL_radius.get(),
-            "material": self.TL_material.get()
-        }
-
-        filename = asksaveasfilename(defaultextension=".json")
-        if filename:
-            with open(filename, "w") as f:
-                json.dump(params, f, indent=4)
-            self.set_status("Preset saved successfully.")
-            
-    def save_preset_Inline(self):
-        params = {
-            "type": "Inline_SIM",
-            "n": self.i_n.get(),
-            "pixel_size": self.i_pixel_size.get(),
-            "FWHM_source": self.i_FWHM_source.get(),
-            "Beam_Shape": self.i_Beam_Shape.get(),
-            "Beam_Spectrum": self.i_Beam_Spectrum.get(),
-            "energy": self.i_beam_energy.get(),
-            "DSO": self.i_DSO.get(),
-            "DOD": self.i_DOD.get(),
-            "Object": self.i_Object.get(),
-            "radius": self.i_radius.get(),
-            "material": self.i_material.get(),
-            "image_option": self.i_image_option.get(),
-            "resolution": self.i_resolution.get(),
-            "inner_radius": self.i_inner_radius.get(),
-            "xshift": self.i_xshift.get(),
-            "yshift": self.i_yshift.get(),
-            "orientation": self.i_orientation.get(),
-            "FWHM_detector": self.i_FWHM_detector.get(),
-            "detector_pixel_size": self.i_detector_pixel_size.get()
-            
-        }
-        filename = asksaveasfilename(defaultextension=".json")
-        if filename:
-            with open(filename, "w") as f:
-                json.dump(params, f, indent=4)
-            self.set_status("Preset saved successfully.")
-            
-            
-    def load_preset_TL(self):
-        filename = askopenfilename(filetypes=[("JSON files", "*.json")])
-        if not filename:
-            return
-
-        with open(filename, "r") as f:
-            params = json.load(f)
-
-        p = params
-
-        self.TL_n.set(p["n"])
-        self.TL_pixel_size.set(p["pixel_size"])
-        self.TL_FWHM_source.set(p["FWHM_source"])
-        self.TL_BeamShape.set(p["Beam_Shape"])
-        self.TL_Beam_Spectrum.set(p["Beam_Spectrum"])
-        self.TL_beam_energy.set(p["energy"])
-        self.TL_DSO.set(p["DSO"])
-        self.TL_DOG1.set(p["DOG1"])
-        self.TL_Period_G1.set(p["Period_G1"])
-        self.TL_G1_Phase.set(p["G1_Phase"])
-        self.TL_steps.set(p["steps"])
-        self.TL_step_length.set(p["step_length"])
-        self.TL_Object.set(p["Object"])
-        self.TL_radius.set(p["radius"])
-        self.TL_material.set(p["material"])
-
-        self.set_status("Preset loaded successfully.")
-    
-    def load_preset_Inline(self):
-        filename = askopenfilename(filetypes=[("JSON files", "*.json")])
-        if not filename:
-            return
-
-        with open(filename, "r") as f:
-            params = json.load(f)
-
-        p = params
-
-        self.i_n.set(p["n"])
-        self.i_pixel_size.set(p["pixel_size"])
-        self.i_FWHM_source.set(p["FWHM_source"])
-        self.i_Beam_Shape.set(p["Beam_Shape"])
-        self.i_Beam_Spectrum.set(p["Beam_Spectrum"])
-        self.i_beam_energy.set(p["energy"])
-        self.i_DSO.set(p["DSO"])
-        self.i_DOD.set(p["DOD"])
-        self.i_Object.set(p["Object"])
-        self.i_radius.set(p["radius"])
-        self.i_material.set(p["material"])
-        self.i_image_option.set(p["image_option"])
-        self.i_resolution.set(p["resolution"])
-        self.i_inner_radius.set(p["inner_radius"])
-        self.i_xshift.set(p["xshift"])
-        self.i_yshift.set(p["yshift"])
-        self.i_orientation.set(p["orientation"])
-        self.i_FWHM_detector.set(p["FWHM_detector"])
-        self.i_detector_pixel_size.set(p["detector_pixel_size"])
-
-        self.set_status("Preset loaded successfully.")
-        
-    def get_inline_config(self):
-        return {
-            "n": self.i_n.get(),
-            "pixel_size": self.i_pixel_size.get(),
-            "DSO": self.i_DSO.get(),
-            "DOD": self.i_DOD.get(),
-            "FWHM_source": self.i_FWHM_source.get(),
-            "Beam_Shape": self.i_Beam_Shape.get(),
-            "Beam_Spectrum": self.i_Beam_Spectrum.get(),
-            "beam_energy": self.i_beam_energy.get(),
-            "Object": self.i_Object.get(),
-            "radius": self.i_radius.get(),
-            "inner_radius": self.i_inner_radius.get(),
-            "xshift": self.i_xshift.get(),
-            "yshift": self.i_yshift.get(),
-            "material": self.i_material.get(),
-            "image_option": self.i_image_option.get(),
-            "detector_pixel_size": self.i_detector_pixel_size.get(),
-            "FWHM_detector": self.i_FWHM_detector.get(),
-            "resolution": self.i_resolution.get(),
-        }
-        
-    def get_TL_config(self):
-        return {
-            "n": self.TL_n.get(),
-            "pixel_size": self.TL_pixel_size.get(),
-            "DSO": self.TL_DSO.get(),
-            "DOG1": self.TL_DOG1.get(),
-            "FWHM_source": self.TL_FWHM_source.get(),
-            "Beam_Shape": self.TL_BeamShape.get(),
-            "Beam_Spectrum": self.TL_Beam_Spectrum.get(),
-            "beam_energy": self.TL_beam_energy.get(),
-            "Period_G1": self.TL_Period_G1.get(),
-            "G1_Phase": self.TL_G1_Phase.get(),
-            "steps": self.TL_steps.get(),
-            "step_length": self.TL_step_length.get(),
-            "Object": self.TL_Object.get(),
-            "radius": self.TL_radius.get(),
-            "inner_radius": self.TL_inner_radius.get(),
-            "xshift": self.TL_xshift.get(),
-            "yshift": self.TL_yshift.get(),
-            "material": self.TL_material.get(),
-            "image_option": self.TL_image_option.get(),
-            "detector_pixel_size": self.TL_detector_pixel_size.get(),
-            "resolution": self.TL_resolution.get(),
-        }
-
     def save_image(self, data):
-        files = [('All Files', '*.*'), 
-                    ('Python Files', '*.py'),
-                    ('HDF5 File', '*.hdf5'),
-                    ('Tiff File', '*.tif')]
-        file = asksaveasfilename(filetypes = files, defaultextension = '.tif')
-            #file = asksaveasfilename()
-        if not file: 
+        files = [('All Files', '*.*'), ('Tiff File', '*.tif')]
+        file = asksaveasfilename(filetypes=files, defaultextension='.tif')
+        if not file:
             return
-        
         im = Image.fromarray(data)
-        sv = im.save(file)
+        im.save(file)
 
     def save_stack_image(self, data):
-        files = [('All Files', '*.*'), 
-                    ('Python Files', '*.py'),
-                    ('HDF5 File', '*.hdf5'),
-                    ('Tiff File', '*.tif')]
-        file = asksaveasfilename(filetypes = files, defaultextension = '.tif')
-            #file = asksaveasfilename()
-        if not file: 
+        files = [('All Files', '*.*'), ('Tiff File', '*.tif')]
+        file = asksaveasfilename(filetypes=files, defaultextension='.tif')
+        if not file:
             return
-        
-        data = np.stack(data, axis =0)
+        data = np.stack(data, axis=0)
         tifffile.imwrite(file, data.astype(np.float32), photometric='minisblack')
-        #imageio.volwrite(file,im)
-    
+
     def set_status(self, text):
         self.status_var.set(text)
         self.master.update_idletasks()
-        
+
     def set_status_threadsafe(self, text):
         self.master.after(0, self.set_status, text)
-        
+
     def set_progress(self, value):
         self.progress_var.set(value)
         self.master.update_idletasks()
-        
+
     def set_progress_threadsafe(self, value):
         self.master.after(0, lambda: self.set_progress(value))
 
     def reset_progress(self):
         self.set_progress(0.0)
-        
+
     def reset_progress_threadsafe(self):
         self.master.after(0, self.reset_progress)
-    
+
     def make_progress_callback(self, prefix):
         def cb(fraction):
             try:
@@ -1561,80 +935,6 @@ class PCSim_gui:
 
         return cb
 
-    
-    def export_inline_zip(self, intensity_array):
-        """Export inline simulation config + result as a ZIP."""
-
-        zip_path = asksaveasfilename(
-            defaultextension=".zip",
-            filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")])
-        if not zip_path:
-            return
-
-        config = self.get_inline_config()
-        config_json = json.dumps(config, indent=2)
-
-        tiff_buffer = io.BytesIO()
-        tifffile.imwrite(tiff_buffer, intensity_array.astype(np.float32))
-        tiff_buffer.seek(0)
-
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        readme = (
-            "XPCIpy Inline Simulation\n"
-            f"Timestamp: {timestamp}\n\n"
-            "This ZIP contains:\n"
-            "- inline_config.json -> simulation parameters\n"
-            "- intensity.tif-> output intensity image\n"
-        )
-
-        with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("inline_config.json", config_json)
-            zf.writestr("README.txt", readme)
-            zf.writestr("intensity.tif", tiff_buffer.getvalue())
-            
-    def export_TL_zip(self, i_stack, ir_stack):
-        """Export Talbot-Lau simulation config + result as a ZIP."""
-
-        zip_path = asksaveasfilename(
-            defaultextension=".zip",
-            filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")])
-        if not zip_path:
-            return
-
-        config = self.get_TL_config()
-        config_json = json.dumps(config, indent=2)
-        
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        i_arr = np.asarray(i_stack)
-        ir_arr = np.asarray(ir_stack)
-
-        if i_arr.ndim == 2:
-            i_arr = i_arr[np.newaxis, ...]
-        if ir_arr.ndim == 2:
-            ir_arr = ir_arr[np.newaxis, ...]
-
-        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("TL_config.json", config_json)
-            
-            buf_obj = io.BytesIO()
-            tifffile.imwrite(buf_obj, i_arr.astype(np.float32), photometric="minisblack")
-            zf.writestr("object_stack.tif", buf_obj.getvalue())
-
-            buf_ref = io.BytesIO()
-            tifffile.imwrite(buf_ref, ir_arr.astype(np.float32), photometric="minisblack")
-            zf.writestr("reference_stack.tif", buf_ref.getvalue())
-
-            readme_text = (
-                "Talbot-Lau phase-contrast simulation results\n"
-                f"Timestamp: {timestamp}\n\n"
-                "Files:\n"
-                "  - TL_config.json: simulation parameters\n"
-                "  - object_stack.tif: phase-stepping stack with object\n"
-                "  - reference_stack.tif: phase-stepping stack without object\n"
-            )
-            zf.writestr("README.txt", readme_text)
-
     def run_with_error_handling(self, func, status_text):
         def worker():
             try:
@@ -1642,7 +942,7 @@ class PCSim_gui:
                 self.reset_progress_threadsafe()
                 base_text = status_text.replace("...", "")
                 self.update_loading_overlay_threadsafe(0.0, prefix=base_text or "Loading")
-        
+
                 func()
                 self.set_progress_threadsafe(100.0)
                 self.update_loading_overlay_threadsafe(100.0, prefix=base_text or "Loading")
@@ -1659,25 +959,20 @@ class PCSim_gui:
         self.set_ui_busy(True)
         base_text = status_text.replace("...", "")
         self.show_loading_overlay_threadsafe(base_text if base_text else "Loading")
-        threading.Thread(target=worker, daemon=True).start() # Run in daemon thread
-        
+        threading.Thread(target=worker, daemon=True).start()
+
     def show_error_threadsafe(self, e):
         def _show():
             messagebox.showerror("Error", f"An error occurred:\n{e}")
         self.master.after(0, _show)
-            
+
     def clear_frame(self, frame):
         for widget in frame.winfo_children():
             widget.destroy()
-            
+
     def set_ui_busy(self, busy: bool):
-        """
-        busy = True  -> disable
-        busy = False -> normal
-        """
         self._ui_busy = bool(busy)
-        state = "disabled" if busy else "normal"
-        
+
         INTERACTIVE_TYPES = (
             tk.Button, ttk.Button,
             tk.Entry, ttk.Entry,
@@ -1687,7 +982,7 @@ class PCSim_gui:
             tk.Spinbox,
             ToggleButton,
         )
-        
+
         def get_state(w):
             if hasattr(w, "instate") and hasattr(w, "state"):
                 st = w.state()
@@ -1697,15 +992,15 @@ class PCSim_gui:
             except Exception:
                 return "normal"
 
-        def set_state(w, state):
+        def set_state(w, s):
             if hasattr(w, "instate") and hasattr(w, "state"):
-                if state == "disabled":
+                if s == "disabled":
                     w.state(["disabled"])
                 else:
                     w.state(["!disabled"])
                 return
             try:
-                w.configure(state=state)
+                w.configure(state=s)
             except Exception:
                 pass
 
@@ -1729,34 +1024,28 @@ class PCSim_gui:
             self.master.configure(cursor="watch" if busy else "")
         except tk.TclError:
             pass
-        
+
     def set_ui_busy_threadsafe(self, busy: bool):
         self.master.after(0, lambda: self.set_ui_busy(busy))
-        
-    #Transparent Loading Screen
-    
+
     def _sync_overlay_to_master(self, event=None):
         if self.overlay is None:
             return
-
         try:
             self.overlay.deiconify()
             self.overlay.lift(self.master)
         except tk.TclError:
             return
-
         self.master.update_idletasks()
         w = self.master.winfo_width()
         h = self.master.winfo_height()
         if w <= 1 or h <= 1:
             return
-
         x = self.master.winfo_rootx()
         y = self.master.winfo_rooty()
         self.overlay.geometry(f"{w}x{h}+{x}+{y}")
-    
-    def show_loading_overlay(self, message="Loading"):
 
+    def show_loading_overlay(self, message="Loading"):
         if self.overlay is not None and self.overlay.winfo_exists():
             try:
                 self.overlay.lift(self.master)
@@ -1806,24 +1095,22 @@ class PCSim_gui:
         self.overlay_progress_var = pb_var
 
         overlay.update_idletasks()
-        
+
     def show_loading_overlay_threadsafe(self, message="Loading"):
         self.master.after(0, lambda: self.show_loading_overlay(message))
 
     def update_loading_overlay(self, percent, prefix="Loading"):
         if self.overlay is None or not self.overlay.winfo_exists():
             self.show_loading_overlay(prefix)
-
         try:
             if self.overlay_label is not None:
                 self.overlay_label.config(text=f"{prefix}... {int(percent)} %")
             if self.overlay_progress_var is not None:
                 self.overlay_progress_var.set(percent)
-
             self.overlay.lift(self.master)
         except tk.TclError:
             pass
-            
+
     def update_loading_overlay_threadsafe(self, percent, prefix="Loading"):
         self.master.after(0, lambda: self.update_loading_overlay(percent, prefix))
 
@@ -1833,200 +1120,16 @@ class PCSim_gui:
                 self.overlay.destroy()
             except tk.TclError:
                 pass
-
         self.overlay = None
         self.overlay_label = None
         self.overlay_progress = None
         self.overlay_progress_var = None
-        
+
     def hide_loading_overlay_threadsafe(self):
         self.master.after(0, self.hide_loading_overlay)
-        
-    def send_to_TLREC(self, i_stack, ir_stack):
-        if not hasattr(self, "tlrec_gui"):
-            self.set_status("TLRec GUI is not available.")
-            return
-        
-        self.tab_container.select(self.TLRec_tab)
-        self.tlrec_gui.load_from_arrays(i_stack, ir_stack, label="Simulation")
-        
-    def gui_check_grating_sampling(self, period_px):
-        buf = io.StringIO()
-        old_stdout = sys.stdout
-        sys.stdout = buf
 
-        pcsim_utils.check_grating_sampling(period_px)
 
-        sys.stdout = old_stdout
-        msg = buf.getvalue().strip()
-
-        if "WARNING" in msg:
-            messagebox.showwarning("Grating Sampling Warning", msg)
-
-    def gui_check_phase_stepping(self, steps, period_px, step_size_px):
-        buf = io.StringIO()
-        old_stdout = sys.stdout
-        sys.stdout = buf
-
-        pcsim_utils.check_phase_stepping(steps, period_px, step_size_px)
-
-        sys.stdout = old_stdout
-        msg = buf.getvalue().strip()
-
-        if "WARNING" in msg:
-            messagebox.showwarning("Phase Stepping Warning", msg)
-            
-    def verify_physical_values_TL(self):
-        Period_G1 = self.TL_Period_G1.get()
-        Talbot_multiple = self.TL_TLmultiple.get()
-        FWHM_source = self.TL_FWHM_source.get()
-        energy = self.TL_beam_energy.get()
-        n = self.TL_n.get()
-        pixel_size = self.TL_pixel_size.get()
-        FWHM_source = self.TL_FWHM_source.get()
-        DSG1 = self.TL_DSO.get()
-        DOG1 = self.TL_DOG1.get()
-        object = self.TL_Object.get()
-        radius = self.TL_radius.get()
-        inner_radius = self.TL_inner_radius.get()
-        FWHM_detector = self.TL_resolution.get()
-        detector_pixel_size = self.TL_detector_pixel_size.get()
-        DSO = DSG1-DOG1
-        
-        
-        if Period_G1 <= 0 or energy <= 0  or Talbot_multiple <= 0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Period G1, Energy and Talbot Multiple are positive values.")
-            return False
-        
-        if FWHM_source <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Source FWHM is a positive value.")
-            return False
-        
-        if object == "Sphere":
-            if radius <= 0:
-                messagebox.showerror("Invalid Parameter", "Sphere radius must be > 0.")
-                return False
-
-        if object == "Cylinder":
-            if radius <= 0:
-                messagebox.showerror("Invalid Parameter", "Cylinder outer radius must be > 0.")
-                return False
-
-            if inner_radius < 0:
-                messagebox.showerror("Invalid Parameter", "Cylinder inner radius cannot be negative.")
-                return False
-
-            if inner_radius >= radius:
-                messagebox.showerror("Invalid Parameter", "Cylinder inner radius must be smaller than outer radius.")
-                return False
-        
-        if n <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Number of Pixels is a positive value.")
-            return False
-        
-        if detector_pixel_size <=0 or FWHM_detector <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Detector Pixel Size and Detector FWHM are positive values.")
-            return False
-        if DSO <=0 or DOG1 <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that DSO and DOG1 are positive values.")
-            return False
-        if pixel_size <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Pixel Size is a positive value.")
-            return False
-        
-        return True
-    
-    def verify_physical_values_inline(self):
-    
-        n = self.i_n.get()
-        DSO = self.i_DSO.get()
-        DOD = self.i_DOD.get()
-        pixel_size = self.i_pixel_size.get()
-        FWHM_source = self.i_FWHM_source.get()
-        Object = self.i_Object.get()
-        FWHM_detector = self.i_FWHM_detector.get()
-        detector_pixel_size = self.i_detector_pixel_size.get()
-        radius = self.i_radius.get()
-        inner_radius = self.i_inner_radius.get()
-        
-        if n <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Number of Pixels is a positive value.")
-            return False
-        if DSO <=0 or DOD <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that DSO and DOD are positive values.")
-            return False
-        if pixel_size <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Pixel Size is a positive value.")
-            return False
-        if FWHM_source <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Source FWHM is a positive value.")
-            return False
-        if detector_pixel_size <=0 or FWHM_detector <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Detector Pixel Size and Detector FWHM are positive values.")
-            return False
-        if Object == "Sphere":
-            if radius <= 0:
-                messagebox.showerror("Invalid Parameter", "Sphere radius must be > 0.")
-                return False
-
-        if Object == "Cylinder":
-            if radius <= 0:
-                messagebox.showerror("Invalid Parameter", "Cylinder outer radius must be > 0.")
-                return False
-
-            if inner_radius < 0:
-                messagebox.showerror("Invalid Parameter", "Cylinder inner radius cannot be negative.")
-                return False
-
-            if inner_radius >= radius:
-                messagebox.showerror("Invalid Parameter", "Cylinder inner radius must be smaller than outer radius.")
-                return False
-        return True
-    
-    def verify_physical_values_checkTL(self):
-        n = self.c_n.get()
-        pixel_size = self.c_pixel_size.get() #um
-        FWHM_source = self.c_FWHM_source.get()
-        Energy = self.c_energy.get() #keV
-        Period = self.c_period.get() # um
-        DC = self.c_DC.get()
-        bar_height = self.c_bar_height.get()
-        multiples = self.c_multiple.get()
-        iterations = self.c_iterations.get()
-        grating_opt = self.c_grating_def.get()
-        
-        if n <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Number of Pixels is a positive value.")
-            return False
-        if pixel_size <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Pixel Size is a positive value.")
-            return False
-        if FWHM_source <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Source FWHM is a positive value.")
-            return False
-        if Energy <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Energy is a positive value.")
-            return False
-        if Period <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Grating Period is a positive value.")
-            return False
-        if DC <=0 or DC >1:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Duty Cycle is between 0 and 1.")
-            return False
-        if grating_opt == "Custom":
-            if bar_height <= 0:
-                messagebox.showerror("Invalid Parameter", "For a custom grating, bar height must be > 0 µm.")
-                return False
-        if multiples <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Talbot multiples is a positive value.")
-            return False
-        if iterations <=0:
-            messagebox.showerror("Invalid Parameters", "Please ensure that Number of calculations (iterations) is a positive value.")
-            return False
-        return True
-    
     def _watch(self, entry_widget, tk_var, condition):
-        """Real-time entry validation: marks the entry red when condition(value) is False."""
         def _check(*_):
             try:
                 val = tk_var.get()
@@ -2039,36 +1142,29 @@ class PCSim_gui:
 
     def add_tooltip(self, widget, text):
         ToolTip(widget, text)
-        
+
     def add_detector_post_panel(self, parent_frame, mode="inline", row=99):
-        
         lf = ttk.LabelFrame(parent_frame, text="Detector (post-processing, no rerun)", padding=(8, 6))
         lf.grid(row=row, column=0, columnspan=3, sticky="ew", padx=5, pady=(10, 5))
 
-
         wg.create_label_entry(lf, "Pixel size detector (um) [0 = use tab value]:", 0, 0, textvariable=self.dp_pixel_det_um, padx=10)
-
         wg.create_label_entry(lf, "Detector FWHM (um) [0 = use tab value]:", 1, 0, textvariable=self.dp_fwhm_det_um, padx=10)
-
-        wg.create_label_combobox(lf, "Noise type", ["none", "poisson", "gaussian"], 2, 0, textvariable=self.dp_noise_type)
+        wg.create_label_combobox(lf, "Noise type", ["none", "poisson", "gaussian", "poisson+gaussian"], 2, 0, textvariable=self.dp_noise_type)
         wg.create_label_entry(lf, "Gaussian sigma (only gaussian):", 3, 0, textvariable=self.dp_gauss_sigma, padx=10)
         wg.create_label_entry(lf, "Photons per pixel (only poisson):", 4, 0, textvariable=self.dp_poisson_N0, padx=10)
-        
-        #ttk.Label(lf, text=f"Current image pixel size: {self.cur_px:.3g} um/px").grid(row=5, column=0)
+        wg.create_label_entry(lf, "Random seed (optional):", 5, 0, textvariable=self.dp_random_seed, padx=10)
 
         bt_frame = ttk.Frame(lf, style="TFrame")
-        bt_frame.grid(row=5, column=0, sticky="ew", pady=(6, 0))
+        bt_frame.grid(row=6, column=0, sticky="ew", pady=(6, 0))
         bt_frame.columnconfigure(0, weight=1)
         bt_frame.columnconfigure(1, weight=1)
 
         ttk.Button(bt_frame, text="Apply", command=lambda: self.apply_detector_post(mode)).grid(row=0, column=0, sticky="ew", padx=(0, 5))
         ttk.Button(bt_frame, text="Reset (raw)", command=lambda: self.reset_detector_post(mode)).grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
-        
         return lf
-    
+
     def get_post_detector_params(self, mode="inline"):
-        
         noise = self.dp_noise_type.get().strip().lower()
         if noise == "none":
             noise = None
@@ -2093,44 +1189,43 @@ class PCSim_gui:
         if fwhm <= 0:
             fwhm = tab_fwhm
 
-        return px_det, fwhm, noise, gauss_sigma, base_px, N0_poisson
+        seed_text = self.dp_random_seed.get().strip()
+        random_seed = None
+        if seed_text:
+            random_seed = int(seed_text)
 
+        return px_det, fwhm, noise, gauss_sigma, base_px, N0_poisson, random_seed
 
     def apply_detector_post(self, mode="inline"):
-
         def worker():
             try:
                 self.set_status_threadsafe("Applying detector model (post)...")
 
-                px_det, fwhm, noise, gauss_sigma, base_px, N0_poisson = self.get_post_detector_params(mode)
+                px_det, fwhm, noise, gauss_sigma, base_px, N0_poisson, random_seed = self.get_post_detector_params(mode)
+                det = detector.Detector(
+                    Image_option="Realistic", pixel_size_detector=px_det, FWHM_detector=fwhm,
+                    noise_type=noise, pixel_size=base_px, gaussian_sigma=gauss_sigma, N0=N0_poisson,
+                    random_seed=random_seed,
+                )
 
-                det = detector.Detector(Image_option="Realistic", pixel_size_detector=px_det, FWHM_detector=fwhm, 
-                                        noise_type=noise, pixel_size=base_px, gaussian_sigma=gauss_sigma, N0=N0_poisson)
-                
                 if mode == "inline":
                     if not hasattr(self, "inline_raw_intensity"):
                         self.master.after(0, lambda: messagebox.showwarning("No data", "Run an Inline simulation first."))
                         return
-
                     cur_px = float(getattr(self, "inline_raw_px_um", self.i_pixel_size.get()))
                     out = det.applyDetector(self.inline_raw_intensity, current_pixel_size=cur_px)
                     out = np.asarray(out, dtype=np.float32)
-                    self.set_status_threadsafe('detector applied')
                     self.inline_display_intensity = out
-                    
-                    def ui():
-                        
-                        if hasattr(self, "inline_post_frame") and self.inline_post_frame.winfo_exists():
-                            self.Plot_Figure(self.inline_post_frame, self.inline_display_intensity, 0, 0, (3, 3),"Post-Processing")
-                        else:
-                            # just in case
-                            self.clear_frame(self.i_results_frame)
-                            self.Plot_Figure(self.i_results_frame, self.inline_display_intensity, 0, 0, (3, 3),"Inline Simulation (Detector POST)")
-                            wg.create_button(self.i_results_frame, "Save Image", 1, 0, command=lambda: self.save_image(self.inline_display_intensity))
 
-                    
+                    def ui():
+                        if hasattr(self, "inline_post_frame") and self.inline_post_frame.winfo_exists():
+                            self.Plot_Figure(self.inline_post_frame, self.inline_display_intensity, 0, 0, (3, 3), "Post-Processing")
+                        else:
+                            self.clear_frame(self.i_results_frame)
+                            self.Plot_Figure(self.i_results_frame, self.inline_display_intensity, 0, 0, (3, 3), "Inline Simulation (Detector POST)")
+                            wg.create_button(self.i_results_frame, "Save Image", 1, 0, command=lambda: self.save_image(self.inline_display_intensity))
                         self.set_status("Detector post-processing applied (Inline).")
-                        
+
                     self.master.after(0, ui)
 
                 if mode == "tl":
@@ -2140,23 +1235,23 @@ class PCSim_gui:
                     cur_px = float(getattr(self, "TL_raw_px_um", self.TL_detector_pixel_size.get()))
                     i_out = det.applyDetector(self.TL_raw_i, current_pixel_size=cur_px)
                     ir_out = det.applyDetector(self.TL_raw_ir, current_pixel_size=cur_px)
-
                     self.TL_i_display = np.asarray(i_out, dtype=np.float32)
                     self.TL_ir_display = np.asarray(ir_out, dtype=np.float32)
-                    
+
                     def ui():
-                        self.stack_viewer_set_stack(self.TL_canvas_post_obj, self.TL_i_display)
-                        self.stack_viewer_set_stack(self.TL_canvas_post_ref, self.TL_ir_display)
-                        self.set_status("Detector post-processing applied (Inline).")
-                        
+                        if hasattr(self, "TL_canvas_post_obj") and hasattr(self, "TL_canvas_post_ref"):
+                            self.stack_viewer_set_stack(self.TL_canvas_post_obj, self.TL_i_display)
+                            self.stack_viewer_set_stack(self.TL_canvas_post_ref, self.TL_ir_display)
+                        else:
+                            self.refresh_TL_results_post()
+                        self.set_status("Detector post-processing applied (TL).")
+
                     self.master.after(0, ui)
-                
 
             except Exception as e:
                 self.master.after(0, lambda: messagebox.showerror("Error", f"Detector post-processing failed:\n{e}"))
 
         threading.Thread(target=worker, daemon=True).start()
-
 
     def reset_detector_post(self, mode="inline"):
         if mode == "inline":
@@ -2164,42 +1259,33 @@ class PCSim_gui:
                 messagebox.showwarning("No data", "Run an Inline simulation first.")
                 return
             self.inline_display_intensity = self.inline_raw_intensity.copy()
-
             self.Plot_Figure(self.inline_post_frame, self.inline_display_intensity, 0, 0, (3, 3), "Post-Processing")
-
             self.set_status("Reset to RAW (Inline).")
             return
-        
+
         if mode == "tl":
             if not hasattr(self, "TL_raw_i") or not hasattr(self, "TL_raw_ir"):
                 messagebox.showwarning("No data", "Run a TL simulation first.")
                 return
-
-            self.TL_i_display  = self.TL_raw_i.copy()
+            self.TL_i_display = self.TL_raw_i.copy()
             self.TL_ir_display = self.TL_raw_ir.copy()
-
             self.stack_viewer_set_stack(self.TL_canvas_post_obj, self.TL_i_display)
             self.stack_viewer_set_stack(self.TL_canvas_post_ref, self.TL_ir_display)
-            
             self.set_status("Reset to RAW (TL).")
 
     def refresh_TL_results_post(self):
         self.clear_frame(self.TL_results_frame)
-        self.Plot_Modulation_Curve(self.TL_results_frame, self.TL_i_display, self.TL_ir_display, 0, 0, (3,3), "Phase Stepping Curve", columnspan=2)
-        self.Plot_Figure(self.TL_results_frame, self.TL_i_display[0,:,:], 1, 0, (3,3), "One Projection (POST)", columnspan=2)
+        self.Plot_Modulation_Curve(self.TL_results_frame, self.TL_i_display, self.TL_ir_display, 0, 0, (3, 3), "Phase Stepping Curve", columnspan=2)
+        self.Plot_Figure(self.TL_results_frame, self.TL_i_display[0, :, :], 1, 0, (3, 3), "One Projection (POST)", columnspan=2)
         wg.create_button(self.TL_results_frame, "Save Stack Object Images", 2, 0, command=lambda: self.save_stack_image(self.TL_i_display))
         wg.create_button(self.TL_results_frame, "Save Stack Reference Images", 2, 1, command=lambda: self.save_stack_image(self.TL_ir_display))
         wg.create_button(self.TL_results_frame, "Send to TLRec", 3, 0, command=lambda: self.send_to_TLREC(self.TL_i_display, self.TL_ir_display))
         self.set_status("Detector post-processing applied (TL).")
-        
 
-    # Same function as TLRec_gui, maybe should create a custom widget
     def update_canvas(self, canvas, image):
-
         width, height = canvas.winfo_width(), canvas.winfo_height()
-        
-        arr = np.asarray(image, dtype=float)
 
+        arr = np.asarray(image, dtype=float)
         finite = np.isfinite(arr)
         if not finite.any():
             arr = np.zeros_like(arr, dtype=float)
@@ -2219,23 +1305,19 @@ class PCSim_gui:
         norm = (norm * 255.0).astype(np.uint8)
 
         image_pil = Image.fromarray(norm)
-        
         h_img, w_img = norm.shape
         scale = min(width / w_img, height / h_img)
         new_w = int(w_img * scale)
         new_h = int(h_img * scale)
-
         resized_image = image_pil.resize((new_w, new_h), Image.BILINEAR)
-
         photo = ImageTk.PhotoImage(resized_image)
 
         canvas.image = photo
         canvas.delete("all")
-        
-        x0 = (width  - new_w) // 2
+        x0 = (width - new_w) // 2
         y0 = (height - new_h) // 2
         canvas.create_image(x0, y0, anchor=tk.NW, image=canvas.image)
-        
+
     def make_stack_viewer(self, parent, title="Stack"):
         box = ttk.LabelFrame(parent, text=title, padding=(6, 6))
         box.grid_rowconfigure(0, weight=1)
@@ -2277,14 +1359,11 @@ class PCSim_gui:
         arr = np.asarray(stack, dtype=np.float32)
         if arr.ndim == 2:
             arr = arr[np.newaxis, ...]
-
         canvas._stack = arr
         canvas._idx.set(0)
-
         n = arr.shape[0]
-        canvas._slider.configure(from_=0, to=max(0, n-1))
+        canvas._slider.configure(from_=0, to=max(0, n - 1))
         canvas._lbl.config(text="Slice: 0")
-
         self.stack_viewer_redraw(canvas)
 
     def stack_viewer_redraw(self, canvas):
@@ -2292,6 +1371,5 @@ class PCSim_gui:
             return
         arr = canvas._stack
         i = int(canvas._idx.get())
-        i = max(0, min(i, arr.shape[0]-1))
-
+        i = max(0, min(i, arr.shape[0] - 1))
         self.update_canvas(canvas, arr[i, :, :])

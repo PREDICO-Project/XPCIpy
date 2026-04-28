@@ -5,6 +5,7 @@ venv/
 .venv-docs/
 
 Notebooks/Results/
+Notebooks/Simulation/
 Data/
 Output/
 dist/
@@ -21,8 +22,10 @@ docs/
 
 # Formats
 **/*.tif
+**/*.tiff
 **/*.dcm
 *.tif
+*.tiff
 *.dcm
 *.log
 *.vrml

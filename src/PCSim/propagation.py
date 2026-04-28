@@ -19,6 +19,13 @@ def create_propagator(n,pixel_size,distance, energy):
 
 def propagate(Wavefront, pixel_size, distance, energy, padding=0):
     """To avoid artifacts padding is applied"""
+    if pixel_size <= 0:
+        raise ValueError("pixel_size must be > 0.")
+    if energy <= 0:
+        raise ValueError("energy must be > 0.")
+    if padding < 0:
+        raise ValueError("padding must be >= 0.")
+
     H0, W0 = Wavefront.shape
     #print(H0)
     pad_pixels = padding
@@ -70,6 +77,11 @@ def padding_wavefront(pad_pixels, U):
 
 
 def zmax_fresnel(N, pixel_size, energy):
+    if pixel_size <= 0:
+        raise ValueError("pixel_size must be > 0.")
+    if energy <= 0:
+        raise ValueError("energy must be > 0.")
+
     wavelength = 1.23984193/(1000*energy) # in um
     zmax = (N * pixel_size * pixel_size) / wavelength
     return zmax * 10**(-4) # convert into cm

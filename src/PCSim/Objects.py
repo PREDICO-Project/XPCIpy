@@ -5,13 +5,13 @@ import warnings
 
 class GeometricObject():
     def __init__(self, n, pixel_size, material, DSO,
-                 x_shift_px=0, y_shift_px=0):
+                 x_shift=0, y_shift=0):
         self.n = int(n)
         self.pixel_size_init = float(pixel_size)
         self.material = material
         self.DSO = DSO
-        self.x_shift_px = int(x_shift_px)
-        self.y_shift_px = int(y_shift_px)
+        self.x_shift = float(x_shift)  # physical units (um)
+        self.y_shift = float(y_shift)  # physical units (um)
 
     
 
@@ -48,28 +48,54 @@ class GeometricObject():
         raise NotImplementedError("Subclasses must implement make_geometry().")
         
 class Sphere(GeometricObject):
-    def __init__(self, n, radius, pixel_size, material, DSO, x_shift_px=0, y_shift_px=0):
-        super().__init__(n, pixel_size, material, DSO, x_shift_px=x_shift_px, y_shift_px=y_shift_px)
+    def __init__(self, n, inner_radius, outer_radius, pixel_size, material, DSO, x_shift=0, y_shift=0):
+        super().__init__(n, pixel_size, material, DSO, x_shift=x_shift, y_shift=y_shift)
         
-        self.radius = float(radius)
+        self.inner_radius = float(inner_radius)
+        self.outer_radius = float(outer_radius)
 
     def make_geometry(self, n, pixel_size):
+        x_shift_px = round(self.x_shift / pixel_size)
+        y_shift_px = round(self.y_shift / pixel_size)
 
-        y,x = np.mgrid[(-n-self.y_shift_px)//2 : (n-self.y_shift_px)//2, (-n-self.x_shift_px)//2 : (n-self.x_shift_px)//2]
+        y,x = np.mgrid[-n//2 + y_shift_px : n//2 + y_shift_px, -n//2 + x_shift_px : n//2 + x_shift_px]
 
         x = (x+0.5)*pixel_size 
         y = (y+0.5)*pixel_size
-
+        
+        image = np.zeros((n,n), dtype=float)
+        
         r2 = x**2 + y**2
-        R2 = self.radius ** 2
+        """
+        R2 = self.outer_radius ** 2
         thickness = np.zeros((n, n), dtype=float)
         inside = r2 < R2
-        thickness[inside] = 2.0 * np.sqrt(np.maximum(R2 - r2[inside], 0.0))
-        return thickness
+        thickness[inside] = 2.0 * np.sqrt(np.maximum(R2 - r2[inside], 0.0))"""
+        
+        mask_ext = r2 < self.outer_radius**2
+
+        if self.inner_radius == 0.:
+            # Solid Sphere
+            image[mask_ext] = 2.0*np.sqrt(self.outer_radius**2 - r2[mask_ext])
+        else:
+            "Hollow Sphere"
+            mask_int = r2 < self.inner_radius**2
+            mask_hollow = mask_ext & mask_int
+
+            # Outer region
+            image[mask_ext] = 2.0*np.sqrt(self.outer_radius**2 - r2[mask_ext])
+
+            # Substract inner hollow region
+            image[mask_hollow] -= 2.0*np.sqrt(self.inner_radius**2 - r2[mask_hollow])
+
+            # Ensure no negative thickness
+            image[image < 0 ] = 0
+        
+        return image
        
 class Wedge(GeometricObject):
-    def __init__(self, n, width, thickness, pixel_size, material, DSO, x_shift_px=0, y_shift_px=0):
-        super().__init__(n, pixel_size, material, DSO, x_shift_px=x_shift_px, y_shift_px=y_shift_px)
+    def __init__(self, n, width, thickness, pixel_size, material, DSO, x_shift=0, y_shift=0):
+        super().__init__(n, pixel_size, material, DSO, x_shift=x_shift, y_shift=y_shift)
         
         self.width = width
         self.thickness = thickness
@@ -77,10 +103,10 @@ class Wedge(GeometricObject):
     def make_geometry(self, n, pixel_size):
         width = self.width
         thickness = self.thickness
-        x_shift = self.x_shift_px
-        y_shift = self.y_shift_px
+        x_shift = round(self.x_shift / pixel_size)
+        y_shift = round(self.y_shift / pixel_size)
         #It returns the thickness of the sphere in any point (valid with a parallel beam).
-        y,x = np.mgrid[(-n-y_shift)//2 : (n-y_shift)//2, (-n-x_shift)//2 : (n-x_shift)//2]
+        y,x = np.mgrid[-n//2 + y_shift : n//2 + y_shift, -n//2 + x_shift : n//2 + x_shift]
         x = (x+0.5)*pixel_size 
         y = (y+0.5)*pixel_size
         image = np.zeros((n,n))
@@ -93,8 +119,8 @@ class Wedge(GeometricObject):
         
                
 class Cylinder(GeometricObject):
-    def __init__(self, n, outer_radius, inner_radius,Orientation,pixel_size, material, DSO, x_shift_px=0, y_shift_px=0):
-        super().__init__(n, pixel_size, material, DSO, x_shift_px=x_shift_px, y_shift_px=y_shift_px)
+    def __init__(self, n, outer_radius, inner_radius,Orientation,pixel_size, material, DSO, x_shift=0, y_shift=0):
+        super().__init__(n, pixel_size, material, DSO, x_shift=x_shift, y_shift=y_shift)
   
         self.inner_radius = inner_radius
         self.outer_radius = outer_radius
@@ -103,13 +129,13 @@ class Cylinder(GeometricObject):
     def make_geometry(self, n, pixel_size):
         #It returns the thickness of the sphere in any point (valid with a parallel beam).
     
-        x_shift = self.x_shift_px
-        y_shift = self.y_shift_px
+        x_shift = round(self.x_shift / pixel_size)
+        y_shift = round(self.y_shift / pixel_size)
         outer_radius = self.outer_radius
         inner_radius = self.inner_radius
         Orientation = self.Orientation
         
-        y,x = np.mgrid[(-n-y_shift)//2 : (n-y_shift)//2, (-n-x_shift)//2 : (n-x_shift)//2]
+        y,x = np.mgrid[-n//2 + y_shift : n//2 + y_shift, -n//2 + x_shift : n//2 + x_shift]
         x = (x+0.5)*pixel_size 
         y = (y+0.5)*pixel_size
         image = np.zeros((n,n))
@@ -158,8 +184,8 @@ class Substrate():
             return substrate*self.thickness        
         
 class Grating(GeometricObject):
-    def __init__(self, n, period, DC, pixel_size, material, DSO, thickness_um=None, grating_type='custom', angle = 0,x_shift_px=0, y_shift_px=0, step =0, design_energy=None):
-        super().__init__(n, pixel_size, material, DSO, x_shift_px=x_shift_px, y_shift_px=y_shift_px)
+    def __init__(self, n, period, DC, pixel_size, material, DSO, thickness_um=None, grating_type='custom', angle = 0,x_shift=0, y_shift=0, step =0, design_energy=None):
+        super().__init__(n, pixel_size, material, DSO, x_shift=x_shift, y_shift=y_shift)
 
         self.period = period
         self.DC = DC
@@ -214,10 +240,12 @@ class Grating(GeometricObject):
         #print(shift_px)
         mask = self.fourier_shift_x(mask, shift_px)
 
-        if self.x_shift_px:
-            mask = np.roll(mask, int(self.x_shift_px), axis=1)
-        if self.y_shift_px:
-            mask = np.roll(mask, int(self.y_shift_px), axis=0)
+        x_shift_px = round(self.x_shift / pixel_size)
+        y_shift_px = round(self.y_shift / pixel_size)
+        if x_shift_px:
+            mask = np.roll(mask, x_shift_px, axis=1)
+        if y_shift_px:
+            mask = np.roll(mask, y_shift_px, axis=0)
 
         if self.angle != 0:
             pad = int(np.ceil(np.sqrt(2) * H - H) / 2)
@@ -264,16 +292,18 @@ class Grating(GeometricObject):
 
 class DoubleSlit(GeometricObject):
 
-    def __init__(self, n, slit_width, center_distance, screen_thickness, pixel_size, material, DSO, slit_height=None,x_shift_px=0, y_shift_px=0):
+    def __init__(self, n, slit_width, center_distance, screen_thickness, pixel_size, material, DSO, slit_height=None,x_shift=0, y_shift=0):
         super().__init__(n, pixel_size, material, DSO,
-                         x_shift_px=x_shift_px, y_shift_px=y_shift_px)
+                         x_shift=x_shift, y_shift=y_shift)
         self.slit_width = slit_width
         self.center_distance = center_distance
         self.screen_thickness = screen_thickness
         self.slit_height = None if slit_height is None else slit_height
 
     def make_geometry(self, n, pixel_size):
-        y, x = np.mgrid[(-n - self.y_shift_px)//2 : (n - self.y_shift_px)//2, (-n - self.x_shift_px)//2 : (n - self.x_shift_px)//2]
+        x_shift_px = round(self.x_shift / pixel_size)
+        y_shift_px = round(self.y_shift / pixel_size)
+        y, x = np.mgrid[-n//2 + y_shift_px : n//2 + y_shift_px, -n//2 + x_shift_px : n//2 + x_shift_px]
 
         x = (x + 0.5) * pixel_size
         y = (y + 0.5) * pixel_size
@@ -299,8 +329,8 @@ class DoubleSlit(GeometricObject):
         return img
 class KnifeEdge(GeometricObject):
 
-    def __init__(self, n, pixel_size, material, DSO, orientation='vertical', blocked_side='left', screen_thickness=50.0, edge_offset_um=0.0, x_shift_px=0, y_shift_px=0):
-        super().__init__(n, pixel_size, material, DSO, x_shift_px=x_shift_px, y_shift_px=y_shift_px)
+    def __init__(self, n, pixel_size, material, DSO, orientation='vertical', blocked_side='left', screen_thickness=50.0, edge_offset_um=0.0, x_shift=0, y_shift=0):
+        super().__init__(n, pixel_size, material, DSO, x_shift=x_shift, y_shift=y_shift)
         self.orientation = orientation.lower()
         self.blocked_side = blocked_side.lower()
         self.screen_thickness = screen_thickness
@@ -314,7 +344,9 @@ class KnifeEdge(GeometricObject):
             raise ValueError("blocked_side for orientation='horizontal' must be 'up' or 'down'.")
 
     def make_geometry(self, n, pixel_size):
-        y, x = np.mgrid[(-n - self.y_shift_px)//2 : (n - self.y_shift_px)//2, (-n - self.x_shift_px)//2 : (n - self.x_shift_px)//2]
+        x_shift_px = round(self.x_shift / pixel_size)
+        y_shift_px = round(self.y_shift / pixel_size)
+        y, x = np.mgrid[-n//2 + y_shift_px : n//2 + y_shift_px, -n//2 + x_shift_px : n//2 + x_shift_px]
         x = (x + 0.5) * pixel_size
         y = (y + 0.5) * pixel_size
 
@@ -333,3 +365,29 @@ class KnifeEdge(GeometricObject):
 
         thickness[mask] = self.screen_thickness
         return thickness
+    
+    
+class Disk(GeometricObject):
+    def __init__(self, n, radius, thickness, pixel_size, material, DSO, x_shift=0, y_shift=0):
+        super().__init__(n, pixel_size, material, DSO,
+                         x_shift=x_shift, y_shift=y_shift)
+
+        self.radius = float(radius)
+        self.thickness = float(thickness)
+
+    def make_geometry(self, n, pixel_size):
+        x_shift_px = round(self.x_shift / pixel_size)
+        y_shift_px = round(self.y_shift / pixel_size)
+        y, x = np.mgrid[-n//2 + y_shift_px : n//2 + y_shift_px, -n//2 + x_shift_px : n//2 + x_shift_px]
+
+        x = (x + 0.5) * pixel_size
+        y = (y + 0.5) * pixel_size
+
+        r2 = x**2 + y**2
+
+        image = np.zeros((n, n), dtype=float)
+        mask = r2 < self.radius**2
+
+        image[mask] = self.thickness
+
+        return image

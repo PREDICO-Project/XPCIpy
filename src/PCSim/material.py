@@ -57,6 +57,8 @@ def make_material(material, energies_keV, out_of_range = "extrapolate"):
         Eq = np.clip(E_in, E_min, E_max)
     elif out_of_range == "extrapolate":
         Eq = E_in
+    else:
+        raise ValueError("out_of_range must be one of: 'raise', 'clip', 'extrapolate'.")
 
     delta = np.interp(Eq, E_tab, d_tab)
     beta = np.interp(Eq, E_tab, b_tab)

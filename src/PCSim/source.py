@@ -45,7 +45,9 @@ class Source():
 
     def Source_PSF(self, H, W, current_pixel_size=None, Magnification=1.0):
         """
-        Source PSF
+        Source PSF (Gaussian).
+        
+        Returns a delta function (impulse) if PSF is sub-pixel, for robustness.
         """
         # Just in case
         if Magnification <= 0:
@@ -62,6 +64,18 @@ class Source():
         denom = 2.0 * np.sqrt(2.0 * np.log(2.0))
         sigma_x_px = (fwhm_x_eff_um / current_pixel_size) / denom
         sigma_y_px = (fwhm_y_eff_um / current_pixel_size) / denom
+
+        # Return delta if PSF is sub-pixel (sigma < 0.5): convolution could be done wrong
+        MIN_SIGMA_PX = 0.5
+        if sigma_x_px < MIN_SIGMA_PX or sigma_y_px < MIN_SIGMA_PX:
+            psf = np.zeros((H, W), float)
+            psf[H // 2, W // 2] = 1.0
+            return psf
+
+        if sigma_x_px <= 0 or sigma_y_px <= 0:
+            psf = np.zeros((H, W), float)
+            psf[H // 2, W // 2] = 1.0
+            return psf
 
         yy = np.arange(H) - (H - 1) / 2.0
         xx = np.arange(W) - (W - 1) / 2.0
