@@ -15,6 +15,10 @@ authors:
   - given-names: Diego
     family-names: Garcia-Pinto
     orcid: 'https://orcid.org/0000-0003-1348-6735'
+identifiers:
+  - type: doi
+    value: 10.1364/OE.573918
+repository-code: 'https://github.com/PREDICO-Project/XPCIpy'
 
 
 preferred-citation:
