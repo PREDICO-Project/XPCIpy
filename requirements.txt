@@ -3,7 +3,11 @@ scipy
 scikit-image
 Pillow
 tifffile
+pydicom
 matplotlib
 tqdm
 tkinterdnd2
 numba
+# Optional, for GPU-accelerated reconstruction (Step Correction): install the cupy
+# wheel matching your CUDA toolkit, e.g. cupy-cuda12x. See https://docs.cupy.dev/en/stable/install.html
+# cupy-cuda12x

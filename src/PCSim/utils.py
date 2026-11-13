@@ -154,13 +154,21 @@ def check_grating_sampling(period_px):
             f"WARNING: The half of the period of the grating ({period_px/2:.2f} px) is not an even number of pixels, the gratings may not be symmetrical.")
 
 def check_phase_stepping(n_steps, period_px, step_size_px):
+    if n_steps < 2:
+        raise ValueError("n_steps must be at least 2 for phase stepping.")
+    if period_px <= 0 or step_size_px <= 0:
+        raise ValueError("period_px and step_size_px must be > 0.")
 
-    total_shift = n_steps * step_size_px
+    total_shift = (n_steps - 1) * step_size_px
     print(total_shift)
     if total_shift < period_px * (1-1e-3):
         print(
             f"WARNING: The number of steps ({n_steps}) with step size ({step_size_px:.2} px) does not cover a full period of the grating ({period_px:.2f} px)."
         )
-    elif np.isclose(total_shift % period_px, 0) is False:
+    elif not np.isclose(total_shift % period_px, 0):
         print(
             f"WARNING: The total number of steps ({total_shift:.2f} px) is not an exact multiple of the G2 period ({period_px:.2f} px). Errors in the reconstruction can appear.")
+
+    if np.isclose(step_size_px % period_px, 0):
+        print(
+            f"WARNING: Each step ({step_size_px:.2f} px) is a whole grating period ({period_px:.2f} px); consecutive images will repeat.")

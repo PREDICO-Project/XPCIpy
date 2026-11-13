@@ -56,7 +56,7 @@ def Two_Shots_Reconstruction(images, images_reference):
   Transmission = a0/a0_ref
   return Dark_Field, Transmission
 
-def Modulation_Curve_Reconstruction(images, images_reference,G2Period,DSO, DOD, DG1O, energy, pixel_size,type, unwrap_phase = False):
+def Modulation_Curve_Reconstruction(images, images_reference,G2Period,DSO, DOD, DG1O, energy, pixel_size,type, unwrap_phase = False, use_gpu = False):
   '''
   Function to perform the Modulation Curve Reconstruction (or Phase Stepping Curve, PSC) from the experimental data.
 
@@ -74,6 +74,8 @@ def Modulation_Curve_Reconstruction(images, images_reference,G2Period,DSO, DOD, 
       energy (float): Eenrgy of design in keV
       type (string): Name of reconstruction method to be applied
       unwrap_phase (boolean): True if unwrap phase algorithm from skimage want to be done
+      use_gpu (boolean): True to run reconstruction types with GPU support (currently 'Step_correction')
+        on GPU via CuPy, if a CUDA device is available. Falls back silently to CPU/NumPy otherwise.
 
   Returns:
       DPC (numpy array): Differential Phase Contrast Image
@@ -131,8 +133,8 @@ def Modulation_Curve_Reconstruction(images, images_reference,G2Period,DSO, DOD, 
     v_r = np.sqrt(a_r**2+b_r**2)/o_r
     
   elif type == 'Step_correction':
-    o, a, b, steps =fit.Step_correction(images)
-    o_r, a_r, b_r, steps_r =fit.Step_correction(images_reference)
+    o, a, b, steps =fit.Step_correction(images, use_gpu=use_gpu)
+    o_r, a_r, b_r, steps_r =fit.Step_correction(images_reference, use_gpu=use_gpu)
     p = utils.calculate_phase(a,b)
     p_r = utils.calculate_phase(a_r,b_r)
     v = np.sqrt(a**2+b**2)/o
@@ -167,8 +169,5 @@ def Modulation_Curve_Reconstruction(images, images_reference,G2Period,DSO, DOD, 
   Phase_Stepping_Curve_object = p
   Phase_Stepping_Curve_object = utils.check_limits_DPC(Phase_Stepping_Curve_object)
   return DPC, Transmission, DF, Phase, Phase_Stepping_Curve_reference, Phase_Stepping_Curve_object
-
-
-
 
 

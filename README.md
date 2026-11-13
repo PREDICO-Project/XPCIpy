@@ -5,6 +5,7 @@ XPCIpy (X-Ray Phase Contrast Imaging in Python) is an open-source software devel
 ## Table Of Contents
 * [How to run](#How-to-run)
 * [PCSim](#PCSim)
+* [Inserts For CT-like Phantoms](#Inserts-For-CT-like-Phantoms)
 * [MoireSim](#MoireSim)
 * [TLRec](#TLRec)
 * [Notebooks](#Notebooks)
@@ -52,6 +53,44 @@ There is a Jupyter Notebook into the [Notebooks Folder](Notebooks) with an examp
 
 ## PCSim
 This module performs simulation of Propagation-based Imaging (PBI) and Talbot-Lau based Phase Contrast Imaging (TLPCI). For more information refere to the Jupyter notebooks for [PBI](Notebooks/Propagation.ipynb) and [TLPCI](Notebooks/Phase_Stepping.ipynb) and to its own [README](src/PCSim/Readme.md). 
+
+## Inserts For CT-like Phantoms
+
+For objects in the same DSO plane, PCSim supports two behaviors:
+
+1. Additive overlap (default): overlapping objects multiply transmission as independent layers.
+2. Insert replacement: insert regions replace the base material contribution in the overlap area.
+
+The insert replacement model is intended for CT-like phantoms such as a water disk with material inserts.
+
+How to enable it:
+
+1. Build one base object in the plane (for example, the water disk).
+2. Build insert objects in the same plane.
+3. Set is_insert = True on each insert object.
+4. Pass base + inserts in the same sample list to Experiment_Inline.
+
+Important constraints:
+
+- Insert replacement is applied per DSO plane.
+- Exactly one base object must exist in that plane.
+- If there are zero or multiple base objects, PCSim falls back to additive overlap and emits a warning.
+
+Minimal example:
+
+```python
+background = obj.Disk(n, radius=260, thickness=160, pixel_size=1.0,
+					  material='H2O', DSO=15.0, x_shift_px=0, y_shift_px=0)
+
+insert_al = obj.Disk(n, radius=55, thickness=160, pixel_size=1.0,
+					 material='Al', DSO=15.0, x_shift_px=-85, y_shift_px=0)
+insert_al.is_insert = True
+
+sample = [background, insert_al]
+Intensity = exp.Experiment_Inline(n, MyGeometry, MySource, MyDetector, sample)
+```
+
+You can find a complete example in [Notebooks/Propagation.ipynb](Notebooks/Propagation.ipynb).
 
 ## MoireSim
 This module specializes in simulating Moir\'{e} artifacts in TLPCI, computing the Intensity Modulation Curve with artifacts due to step and dose fluctuations. For more information refer to its [Notebook](Notebooks/MoireSim.ipynb) and [README](src/Simple_Numerical_Simulation/Readme.md) file. 

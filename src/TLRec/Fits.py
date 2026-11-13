@@ -2,6 +2,7 @@ import numpy as np
 from scipy import optimize, fftpack
 import src.TLRec.utils as utils
 import src.TLRec.Correction as Correction
+import src.TLRec.backend as backend
 
 try:
     from numba import njit
@@ -213,16 +214,6 @@ def opt_fit_least_square(images,A):
     """
     A = np.asarray(A, dtype = np.float64)
     (z,y,x) = images.shape
-    """o = np.zeros((y,x), dtype = np.float64)
-    a = np.zeros((y,x), dtype = np.float64)
-    b =np.zeros((y,x), dtype = np.float64)
-    for ii in range(y):
-      for jj in range(x):
-        yy = np.asarray(images[:,ii,jj], dtype = np.float64)
-        o_sol, a_sol, b_sol = np.linalg.lstsq(A, yy)[0]
-        o[ii,jj] = o_sol
-        a[ii,jj] = a_sol
-        b[ii,jj] = b_sol"""
     # It may be more efficient
     C = np.linalg.inv(A.T @ A) @ A.T
     images_flat = images.reshape(z, y * x)
@@ -233,7 +224,7 @@ def opt_fit_least_square(images,A):
     return o, a, b
 
   
-def Step_correction(images):
+def Step_correction(images, use_gpu=False):
     """
     Corrects phase-step errors by minimizing a function.
     The function estimates step deviations, builds an updated
@@ -242,6 +233,10 @@ def Step_correction(images):
     Args:
       images (numpy array): 3 dimensional array with the raw images recorded by the detector.
         The shape should be (N, Y, X).
+      use_gpu (bool): If True and a CUDA device/CuPy are available, the C matrix and the
+        pixel-wise solve are computed on GPU. `images` is transferred once at the start and
+        the corrected offset/cosine/sine maps are brought back to host once at the end;
+        everything in between (including each optimizer iteration) stays on GPU.
 
     Returns:
       o (numpy array): Offset term for all pixels.
@@ -249,9 +244,17 @@ def Step_correction(images):
       b (numpy array): Sine coefficient for all pixels.
       new_steps (numpy array): Corrected phase-step positions.
     """
+    xp = backend.get_xp(use_gpu)
     steps = np.arange(0,images.shape[0],1)*2*np.pi/images.shape[0]
     error = np.zeros((images.shape[0]))
-    new_errors = optimize.minimize(Correction.Improve_reconstruction_minimization_steps, error, Correction.calculate_C_matrix(images))
+
+    if xp is np:
+        C = Correction.calculate_C_matrix(images, xp=np)
+        new_errors = optimize.minimize(Correction.Improve_reconstruction_minimization_steps, error, C)
+    else:
+        images_gpu = xp.asarray(images)
+        C = Correction.calculate_C_matrix(images_gpu, xp=xp)
+        new_errors = optimize.minimize(Correction.Improve_reconstruction_minimization_steps_xp, error, args=(C, xp))
     new_errors = new_errors.x
     print(new_errors)
     step_errors = new_errors[0:images.shape[0]]
@@ -260,7 +263,11 @@ def Step_correction(images):
     A[:,1] = np.cos(new_steps)
     A[:,2] = np.sin(new_steps)
     #o, a, b =opt_fit_least_square(images, A)
-    o, a, b =resolve_eq(images, A)
+    if xp is np:
+        o, a, b = resolve_eq(images, A)
+    else:
+        o, a, b = resolve_eq_xp(images_gpu, A, xp)
+        o, a, b = backend.asnumpy(o), backend.asnumpy(a), backend.asnumpy(b)
     return o, a, b, new_steps
   
 @njit(parallel=False, cache=False, fastmath=True)  
@@ -277,20 +284,25 @@ def resolve_eq(images,A ):
       b (numpy array): Sine coefficient for all pixels.
   """
   (z,y,x) = images.shape
-  """o = np.zeros((y,x))
-  a = np.zeros((y,x))
-  b = np.zeros((y,x))
-  B = np.linalg.inv(A.T@A)
-  C = B @ A.T
-  for ii in range(y):
-    for jj in range(x):
-      yy =np.asarray(images[:,ii,jj], dtype = np.float64)
-      o_sol, a_sol, b_sol = C@yy
-      o[ii,jj] = o_sol
-      a[ii,jj] = a_sol
-      b[ii,jj] = b_sol"""
   # It may be more efficient
   C = np.linalg.inv(A.T@A) @ A.T
+  images_flat = images.reshape(z, y * x)
+  coeffs = C @ images_flat
+  o = coeffs[0, :].reshape(y, x)
+  a = coeffs[1, :].reshape(y, x)
+  b = coeffs[2, :].reshape(y, x)
+  return o, a, b
+
+
+def resolve_eq_xp(images, A, xp):
+  """Backend-agnostic version of resolve_eq (used on GPU; the @njit resolve_eq above is used on CPU).
+
+  This is the expensive step of Step_correction (one big matmul over all pixels),
+  so it is the main reason to run this reconstruction type on GPU.
+  """
+  (z,y,x) = images.shape
+  A = xp.asarray(A, dtype=xp.float64)
+  C = xp.linalg.inv(A.T@A) @ A.T
   images_flat = images.reshape(z, y * x)
   coeffs = C @ images_flat
   o = coeffs[0, :].reshape(y, x)

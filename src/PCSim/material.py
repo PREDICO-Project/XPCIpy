@@ -15,8 +15,9 @@ def load_material_table(material):
     Returns:
         E_keV, delta, beta  (all np.ndarray, dtype=float)
     """
-    directory = MATERIALS_DIR 
-    path = directory / f"{material}.txt"
+    directory = MATERIALS_DIR
+    material_name = Path(str(material)).stem
+    path = directory / f"{material_name}.txt"
     if not path.exists():
         raise FileNotFoundError(
             f"Material table not found: {path}\nAvailable: {', '.join(list_available_materials(directory))}"
@@ -57,6 +58,8 @@ def make_material(material, energies_keV, out_of_range = "extrapolate"):
         Eq = np.clip(E_in, E_min, E_max)
     elif out_of_range == "extrapolate":
         Eq = E_in
+    else:
+        raise ValueError("out_of_range must be one of: 'raise', 'clip', 'extrapolate'.")
 
     delta = np.interp(Eq, E_tab, d_tab)
     beta = np.interp(Eq, E_tab, b_tab)

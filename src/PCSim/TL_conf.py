@@ -10,7 +10,7 @@ class TL_CONFIG():
         self.G1_type = G1_type # Phase introduced by G1. It can be 'phase_pi', 'phase_pi_2'.
         self.TL_multiple = TL_multiple # Which fractional Talbot Distance between G1 and G2
         self.Number_steps = Number_steps # Number of steps
-        self.Step_length = Step_length # Length of the Steps (pixel)
+        self.Step_length = Step_length # Physical grating displacement per step (um)
         self.pixel_size = pixel_size # Pixel Size in um
         self.angle = angle # Angle between gratings
         self.resolution = resolution # Resolution of the detector in um

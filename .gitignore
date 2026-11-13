@@ -1,10 +1,13 @@
 __pycache__/
+.pytest_cache/
 
 # Virtual Environment
-venv/
+.venv/
 .venv-docs/
 
+MyTests/
 Notebooks/Results/
+Notebooks/Simulation/
 Data/
 Output/
 dist/
@@ -14,15 +17,18 @@ docs/build/
 docs/_build/
 docs/
 .github/
-
+.vscode/
+.venvç/
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
 # Formats
 **/*.tif
+**/*.tiff
 **/*.dcm
 *.tif
+*.tiff
 *.dcm
 *.log
 *.vrml
@@ -35,3 +41,8 @@ test*
 Notebooks/test*
 all.txt
 
+
+# Not finished yet
+src/PCSim/Objects_3D.py
+src/TLRec/model_based.py
+Notebooks/new_TLRec.ipynb
