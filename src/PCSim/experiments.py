@@ -184,7 +184,7 @@ def Experiment_Inline(n, Geometry, Source, Detector,Objects,
         M_source = M_global - 1
     
     # Without zooming: 
-    Intensity = Source.PSF_blurr(Intensity, current_pixel_size=px_ref, Magnification=M_source)
+    Intensity = Source.PSF_blurr(Intensity, current_pixel_size=px_det, Magnification=M_source)
 
     Intensity_raw = Intensity
     if apply_detector:
@@ -199,7 +199,7 @@ def Experiment_Inline(n, Geometry, Source, Detector,Objects,
     return Intensity_det    
 
 def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL_CONFIG, 
-                              padding = 0, progress_cb=None, return_raw = False, apply_detector = True):
+                              padding=0, progress_cb=None, return_raw=False, apply_detector=True):
 
     Energies = Source.energies
     energy_weights = Source.intensities
@@ -209,12 +209,12 @@ def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL
         Objects_local.append(G1)
 
     steps = TL_CONFIG.Number_steps
-    Movable_Grating = TL_CONFIG.Movable_Grating # 'G1' or 'G2'
+    Movable_Grating = TL_CONFIG.Movable_Grating
     pixel_size = TL_CONFIG.pixel_size
-    step_length = TL_CONFIG.Step_length 
+    step_length = TL_CONFIG.Step_length  # um; convert only for sampling checks
 
     z_G1 = G1.DSO
-    
+
     if Source.Beam_distribution == "Conical":
         conical = True
     elif Source.Beam_distribution == "Plane":
@@ -225,121 +225,165 @@ def Experiment_Phase_Stepping(n, Detector, Source, Geometry, Objects, G1, G2, TL
     z_det = Geometry.DSD
     if z_det <= 0:
         raise ValueError("Source-Detector distance must be > 0.")
-    
+
     Objects_sorted = sorted(Objects_local, key=lambda x: float(getattr(x, "DSO", 0.0)))
 
     if len(Objects_sorted) > 0:
-        z_ref = Objects_sorted[0].DSO  
+        z_ref = Objects_sorted[0].DSO
     else:
         raise ValueError("No object is defined.")
-    
-    z_ref = min(z_G1, Objects_sorted[0].DSO) # reference plane, G1 or the first Object
 
-    px_ref = Source.pixel_size  # Pixel size at the beginning (source plane)
+    z_ref = min(z_G1, Objects_sorted[0].DSO)
 
-    utils.check_grating_sampling(G1.period/pixel_size)
-    utils.check_grating_sampling(G2.period/pixel_size)
-    utils.check_phase_stepping(steps, G2.period/pixel_size, step_length)
- 
+    px_ref = Source.pixel_size
+
+    utils.check_grating_sampling(G1.period / pixel_size)
+    utils.check_grating_sampling(G2.period / pixel_size)
+    utils.check_phase_stepping(steps, G2.period / pixel_size, step_length / pixel_size)
+
+    images_sim = np.zeros((steps, n, n), dtype=float)
+    images_reference_sim = np.zeros((steps, n, n), dtype=float)
+
     images = []
     images_reference = []
-    
     images_raw = []
     images_reference_raw = []
 
     total = steps
-    
-    for N in tqdm(range(0,steps), desc='phase steps'):
-        if Movable_Grating == 'G2':
-            G2_step = N*step_length
-            G1_step = 0
-        if Movable_Grating == 'G1':
-            G1_step = N*step_length
-            G2_step = 0
-        #print(G1_step, G2_step)
-        G1.update_step(G1_step)
-        G2.update_step(G2_step)
+    px = px_ref
+    pxR = px_ref
 
-        I_obj = np.zeros((n, n), dtype=float)
-        I_ref = np.zeros((n, n), dtype=float)
-             
-        for ie, energy in enumerate(Energies):
+    if Movable_Grating == 'G2':
+        G1.update_step(0.0)
+
+        for ie, energy in enumerate(tqdm(Energies, desc='energies')):
             w = energy_weights[ie]
 
             u = np.ones((n, n), dtype=np.complex128)
-
             u, z_prev, px = Propagate_Objects(Objects_sorted, Geometry, energy, padding, px_ref, z_ref, conical)
 
             if z_det > z_prev:
                 dz = z_det - z_prev
-                
                 M = Geometry.calculate_magnification(z_prev, z_det, conical)
-                #print(dz, M)
                 u = prop.propagate(u, px, dz / M, energy, padding=padding)
                 px *= M
 
-            T_g2 = G2.transmission_function(energy, px)
-            u *= T_g2
-
-            I_obj += np.abs(u) ** 2 * w
+            I_u = np.abs(u) ** 2
 
             uR = np.ones((n, n), dtype=np.complex128)
-
-            z_prev = z_ref
+            z_prevR = z_ref
             pxR = float(px_ref)
-           
-            dz = z_G1 - z_prev
+
+            dz = z_G1 - z_prevR
             if dz > 0:
-                M = Geometry.calculate_magnification(z_prev, z_G1, conical)
+                M = Geometry.calculate_magnification(z_prevR, z_G1, conical)
                 uR = prop.propagate(uR, pxR, dz / M, energy, padding=padding)
                 pxR *= M
-            z_prev = z_G1
+            z_prevR = z_G1
 
             T_g1_R = G1.transmission_function(energy, pxR)
-            
             uR *= T_g1_R
 
-            if z_det > z_prev:
-                dz = z_det - z_prev
-                M = Geometry.calculate_magnification(z_prev, z_det, conical)
+            if z_det > z_prevR:
+                dz = z_det - z_prevR
+                M = Geometry.calculate_magnification(z_prevR, z_det, conical)
                 uR = prop.propagate(uR, pxR, dz / M, energy, padding=padding)
                 pxR *= M
-            T_g2_R = G2.transmission_function(energy, pxR)
 
-            uR *= T_g2_R
+            I_uR = np.abs(uR) ** 2
 
+            for N in range(steps):
+                G2.update_step(N * step_length)
+                T_g2 = G2.transmission_function(energy, px)
+                T_g2_R = G2.transmission_function(energy, pxR)
+                images_sim[N] += I_u * np.abs(T_g2) ** 2 * w
+                images_reference_sim[N] += I_uR * np.abs(T_g2_R) ** 2 * w
 
-            I_ref += np.abs(uR) ** 2 * w
+    else:
+        for N in tqdm(range(steps), desc='phase steps'):
+            G1_step = N * step_length
+            G2_step = 0
+            G1.update_step(G1_step)
+            G2.update_step(G2_step)
+
+            I_obj = np.zeros((n, n), dtype=float)
+            I_ref = np.zeros((n, n), dtype=float)
+
+            for ie, energy in enumerate(Energies):
+                w = energy_weights[ie]
+
+                u = np.ones((n, n), dtype=np.complex128)
+                u, z_prev, px = Propagate_Objects(Objects_sorted, Geometry, energy, padding, px_ref, z_ref, conical)
+
+                if z_det > z_prev:
+                    dz = z_det - z_prev
+                    M = Geometry.calculate_magnification(z_prev, z_det, conical)
+                    u = prop.propagate(u, px, dz / M, energy, padding=padding)
+                    px *= M
+
+                T_g2 = G2.transmission_function(energy, px)
+                u *= T_g2
+
+                I_obj += np.abs(u) ** 2 * w
+
+                uR = np.ones((n, n), dtype=np.complex128)
+                z_prev = z_ref
+                pxR = float(px_ref)
+
+                dz = z_G1 - z_prev
+                if dz > 0:
+                    M = Geometry.calculate_magnification(z_prev, z_G1, conical)
+                    uR = prop.propagate(uR, pxR, dz / M, energy, padding=padding)
+                    pxR *= M
+                z_prev = z_G1
+
+                T_g1_R = G1.transmission_function(energy, pxR)
+                uR *= T_g1_R
+
+                if z_det > z_prev:
+                    dz = z_det - z_prev
+                    M = Geometry.calculate_magnification(z_prev, z_det, conical)
+                    uR = prop.propagate(uR, pxR, dz / M, energy, padding=padding)
+                    pxR *= M
+
+                T_g2_R = G2.transmission_function(energy, pxR)
+                uR *= T_g2_R
+
+                I_ref += np.abs(uR) ** 2 * w
+
+            images_sim[N] = I_obj
+            images_reference_sim[N] = I_ref
+
+    for N in tqdm(range(steps), desc='post-processing'):
+        I_obj = images_sim[N]
+        I_ref = images_reference_sim[N]
 
         I_obj = Source.PSF_blurr(I_obj, current_pixel_size=px, Magnification=Geometry.calculate_magnification(z_ref, z_det, conical))
         I_ref = Source.PSF_blurr(I_ref, current_pixel_size=pxR, Magnification=Geometry.calculate_magnification(z_ref, z_det, conical))
 
-
         if return_raw:
-            I_raw = np.asarray(I_obj, dtype=np.float32)
-            Ir_raw = np.asarray(I_ref, dtype=np.float32)
-            images_raw.append(I_raw)
-            images_reference_raw.append(Ir_raw)
-            
+            images_raw.append(np.asarray(I_obj, dtype=np.float32))
+            images_reference_raw.append(np.asarray(I_ref, dtype=np.float32))
+
         if apply_detector:
-            print('Applying detector effects')
             px_det = Geometry.pixel_size_at_distance(px_ref, z_ref, z_det, conical)
             I_obj = Detector.applyDetector(I_obj, current_pixel_size=px_det)
             I_ref = Detector.applyDetector(I_ref, current_pixel_size=px_det)
 
         images.append(I_obj)
         images_reference.append(I_ref)
-        
+
         if progress_cb is not None:
             progress_cb((N + 1) / total)
 
     images = np.asarray(images)
     images_reference = np.asarray(images_reference)
-    
+
     if return_raw:
         images_raw = np.asarray(images_raw)
         images_reference_raw = np.asarray(images_reference_raw)
         return images, images_reference, images_raw, images_reference_raw
+
     return images, images_reference
 
 def Propagate_Objects(Objects_sorted, Geometry, energy, padding,px_ref, z_ref, conical):

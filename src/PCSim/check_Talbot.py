@@ -58,7 +58,19 @@ def map_Visibility_DC_Energy(n, energies_keV, DC_list, distance_cm, period_um, p
     
 
 def visibility(profile):
-    return (np.max(profile)-np.min(profile))/(np.max(profile)+np.min(profile))
+    profile = np.asarray(profile, dtype=np.float64)
+    if profile.size == 0:
+        return 0.0
+
+    profile = np.nan_to_num(profile, nan=0.0, posinf=0.0, neginf=0.0).ravel()
+    max_val = np.max(profile)
+    min_val = np.min(profile)
+    denom = max_val + min_val
+
+    if np.isclose(denom, 0.0):
+        return 0.0
+
+    return float((max_val - min_val) / denom)
 
 def profile_after_propagation(n, G, energy_keV, pixel_size_um, distance_cm, PSF_Source=None):
 

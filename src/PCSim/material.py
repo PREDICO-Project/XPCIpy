@@ -15,8 +15,9 @@ def load_material_table(material):
     Returns:
         E_keV, delta, beta  (all np.ndarray, dtype=float)
     """
-    directory = MATERIALS_DIR 
-    path = directory / f"{material}.txt"
+    directory = MATERIALS_DIR
+    material_name = Path(str(material)).stem
+    path = directory / f"{material_name}.txt"
     if not path.exists():
         raise FileNotFoundError(
             f"Material table not found: {path}\nAvailable: {', '.join(list_available_materials(directory))}"

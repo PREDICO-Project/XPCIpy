@@ -3,6 +3,21 @@
 ## XPCIpy GUI – Change Log
 This document summarizes all approved updates, fixes, and improvements implemented in the Reconstruction (TLRec) and Simulation (PCSim) GUI modules.
 
+## [v. 1.4.0] – Model-Based Reconstruction & Expanded Simulation
+
+### TLRec – Reconstruction Methods and GPU Acceleration
+- **Optional GPU acceleration for Step Correction**: Added a CuPy backend for the expensive covariance calculation, with a GUI toggle enabled when a compatible CUDA device is available. NumPy remains the default and fallback backend.
+
+### PCSim – Expanded Geometries and Physics Utilities
+- **CT disk phantom with inserts**: Added a disk phantom geometry whose material inserts replace the background within their regions, plus GUI controls to create and edit the insert definitions.
+- **More geometry types in the object editor**: Added GUI support for Wedge, Disk, DoubleSlit, and KnifeEdge objects, including type-specific parameter validation.
+- **Geometry utilities**: Added energy/wavelength conversions, Fresnel-number calculation, and geometric-blur estimation.
+- **Propagation and simulation refinements**: Cached frequency grids and propagation kernels, improved propagation behavior, and refined phase-stepping simulation and detector/source blur handling.
+- **Robustness improvements**: Improved material-file resolution and validation of degenerate Talbot visibility and phase-stepping inputs.
+
+### Notebooks
+- Updated the simulation, propagation, phase-stepping, and TLRec notebooks to reflect the current workflows and reconstruction changes.
+
 ## [v. 1.3.0] – PCSim Physics Engine Improvements
 
 ### PCSim – Insert Mode for CT-like Phantoms

@@ -91,7 +91,7 @@ class InlineTab:
         self.add_tooltip(self.DSOLabel, "Distance from the source to the object in centimeters.")
         self.add_tooltip(self.FWHMSouLabel, "Full Width at Half Maximum (FWHM) of the source in micrometers.")
         self.add_tooltip(self.BeamEnergyL, "Energy of the beam in keV. Used for wavelength-dependent calculations.")
-        self.add_tooltip(self.ObjectLabel, "Type of object to simulate: 'Sphere' or 'Cylinder'.")
+        self.add_tooltip(self.ObjectLabel, "Open Manage Objects to configure Sphere, Cylinder or Wedge geometries.")
         self.add_tooltip(self.DetectorL, "Type of image to simulate: 'Ideal' (perfect detector) or 'Realistic' (with detector effects).")
         self.add_tooltip(self.PixelDetectorL, "Pixel size of the detector in micrometers.")
         self.add_tooltip(self.ResolutionL, "Detector resolution specified as Full Width at Half Maximum (FWHM) in micrometers.")
@@ -99,12 +99,11 @@ class InlineTab:
 
     def RunInline(self):
 
+        if not self.verify_physical_values_inline():
+            self.set_status("Error in physical values for Inline simulation.")
+            return
+
         def _run():
-
-            if not self.verify_physical_values_inline():
-                self.set_status("Error in physical values for Inline simulation.")
-                return
-
             self.set_status("Running inline simulation...")
             n = self.i_n.get()
             DSO = self.i_DSO.get()
@@ -177,7 +176,7 @@ class InlineTab:
             "Beam_Spectrum": self.i_Beam_Spectrum.get(),
             "beam_energy": self.i_beam_energy.get(),
             "Object": self.i_Object.get(),
-            "outer_radius": self.i_radius.get(),
+            "outer_radius": self.i_outer_radius.get(),
             "inner_radius": self.i_inner_radius.get(),
             "xshift": self.i_xshift.get(),
             "yshift": self.i_yshift.get(),
@@ -190,6 +189,7 @@ class InlineTab:
         }
 
     def save_preset_Inline(self):
+        primary_object = self.inline_objects_data[0]
         params = {
             "type": "Inline_SIM",
             "n": self.i_n.get(),
@@ -201,7 +201,9 @@ class InlineTab:
             "DSO": self.i_DSO.get(),
             "DOD": self.i_DOD.get(),
             "Object": self.i_Object.get(),
-            "outer_radius": self.i_radius.get(),
+            "outer_radius": self.i_outer_radius.get(),
+            "width": primary_object.get("width", self.i_outer_radius.get()),
+            "thickness": primary_object.get("thickness", self.i_outer_radius.get()),
             "material": self.i_material.get(),
             "objects": self.inline_objects_data,
             "image_option": self.i_image_option.get(),
@@ -235,17 +237,17 @@ class InlineTab:
         self.i_beam_energy.set(p["energy"])
         self.i_DSO.set(p["DSO"])
         self.i_DOD.set(p["DOD"])
-        self.i_Object.set(p["Object"])
-        self.i_radius.set(p["outer_radius"])
-        self.i_material.set(p["material"])
-        self.i_image_option.set(p["image_option"])
-        self.i_resolution.set(p["resolution"])
-        self.i_inner_radius.set(p["inner_radius"])
-        self.i_xshift.set(p["xshift"])
-        self.i_yshift.set(p["yshift"])
-        self.i_orientation.set(p["orientation"])
-        self.i_FWHM_detector.set(p["FWHM_detector"])
-        self.i_detector_pixel_size.set(p["detector_pixel_size"])
+        self.i_Object.set(p.get("Object", "Sphere"))
+        self.i_outer_radius.set(p.get("outer_radius", p.get("radius", 0.0)))
+        self.i_material.set(p.get("material", self._default_material_name()))
+        self.i_image_option.set(p.get("image_option", "Ideal"))
+        self.i_resolution.set(p.get("resolution", 0))
+        self.i_inner_radius.set(p.get("inner_radius", 0.0))
+        self.i_xshift.set(p.get("xshift", 0))
+        self.i_yshift.set(p.get("yshift", 0))
+        self.i_orientation.set(p.get("orientation", "Vertical"))
+        self.i_FWHM_detector.set(p.get("FWHM_detector", 0.0))
+        self.i_detector_pixel_size.set(p.get("detector_pixel_size", 0.0))
 
         if "objects" in p:
             self.inline_objects_data = self._normalize_object_specs(p["objects"], mode="inline")

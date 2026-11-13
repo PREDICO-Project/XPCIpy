@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def cosfunc(t, A, w, p, c):  
   return A * np.cos(w*t + p) + c
 

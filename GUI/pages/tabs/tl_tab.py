@@ -142,11 +142,11 @@ class TLTab:
         self.modify_DOD()
 
     def RunTL(self):
-        def _run():
-            if not self.verify_physical_values_TL():
-                self.set_status("Error in physical values for Talbot-Lau simulation.")
-                return
+        if not self.verify_physical_values_TL():
+            self.set_status("Error in physical values for Talbot-Lau simulation.")
+            return
 
+        def _run():
             n = self.TL_n.get()
             pixel_size = self.TL_pixel_size.get()
             FWHM_source = self.TL_FWHM_source.get()
@@ -211,7 +211,7 @@ class TLTab:
             self.TL_raw_ir = np.asarray(ir_raw, dtype=np.float32)
             self.TL_i_display = np.asarray(i, dtype=np.float32)
             self.TL_ir_display = np.asarray(ir, dtype=np.float32)
-            self.TL_raw_px_um = float(self.TL_detector_pixel_size.get())
+            self.TL_raw_px_um = float(self.TL_pixel_size.get())
 
             def update_gui():
                 curve_f = ttk.Frame(self.TL_results_frame, style="TFrame")

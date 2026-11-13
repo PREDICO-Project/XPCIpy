@@ -26,7 +26,7 @@ class Styles:
        
         style.configure("TFrame", background="gray20")
         style.configure("TNotebook", background="gray20", borderwidth=0)
-        style.configure("TNotebook.Tab", background="gray35", foreground="white", padding=[5, 2], ont=(font_type, font_size))
+        style.configure("TNotebook.Tab", background="gray35", foreground="white", padding=[5, 2], font=(font_type, font_size))
         
         style.configure("TNotebook", background="gray20", bordercolor="gray20")
         style.map("TNotebook.Tab", background=[("selected", "gray20")], expand=[("selected", [1, 1, 1, 0])])

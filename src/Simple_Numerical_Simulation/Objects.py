@@ -411,6 +411,73 @@ class MultiMaterialComposite(GeometricObject):
         return self.a0_Distribution()
 
 
+def build_ct_disk_phantom(n, pixel_size, phantom_radius, phantom_thickness, background_material, inserts,
+    energy_keV, center=(0.0, 0.0)):
+    n = int(n)
+    pixel_size = float(pixel_size)
+    phantom_radius = float(phantom_radius)
+    phantom_thickness = float(phantom_thickness)
+    energy_keV = float(energy_keV)
+
+    if n <= 0:
+        raise ValueError("n must be positive.")
+    if pixel_size <= 0:
+        raise ValueError("pixel_size must be positive.")
+    if phantom_radius <= 0:
+        raise ValueError("phantom_radius must be positive.")
+    if phantom_thickness <= 0:
+        raise ValueError("phantom_thickness must be positive.")
+    if energy_keV <= 0:
+        raise ValueError("energy_keV must be positive.")
+
+    wavelength = 1.23984193 / (1000.0 * energy_keV)
+    k = 2.0 * np.pi / wavelength
+
+    x, y = np.mgrid[(-n-0)//2:(n-0)//2, (-n-0)//2:(n-0)//2]
+    x = (x + 0.5) * pixel_size - float(center[0])
+    y = (y + 0.5) * pixel_size - float(center[1])
+
+    outer_mask = (x**2 + y**2) <= phantom_radius**2
+    thickness_map = np.zeros((n, n), dtype=float)
+    phase_map = np.zeros((n, n), dtype=float)
+    attenuation_map = np.zeros((n, n), dtype=float)
+
+    base_delta = float(background_material['delta']) * k
+    base_beta = float(background_material['beta']) * k
+
+    thickness_map[outer_mask] = phantom_thickness
+    phase_map[outer_mask] = phantom_thickness * base_delta
+    attenuation_map[outer_mask] = phantom_thickness * base_beta
+
+    for insert in inserts:
+        insert_radius = float(insert['radius'])
+        insert_center = insert.get('center', (0.0, 0.0))
+        insert_thickness = float(insert.get('thickness', phantom_thickness))
+        material = insert['material']
+        offset_x = float(insert_center[0]) - float(center[0])
+        offset_y = float(insert_center[1]) - float(center[1])
+
+        if insert_radius <= 0:
+            raise ValueError("insert radius must be positive.")
+        if insert_thickness <= 0:
+            raise ValueError("insert thickness must be positive.")
+        if np.hypot(offset_x, offset_y) + insert_radius > phantom_radius + 0.5 * pixel_size:
+            raise ValueError("Insert must fit inside the phantom disk.")
+
+        insert_mask = ((x - offset_x)**2 + (y - offset_y)**2) <= insert_radius**2
+        insert_mask &= outer_mask
+
+        insert_delta = float(material['delta']) * k
+        insert_beta = float(material['beta']) * k
+
+        thickness_map[insert_mask] = insert_thickness
+        phase_map[insert_mask] = insert_thickness * insert_delta
+        attenuation_map[insert_mask] = insert_thickness * insert_beta
+
+    return MultiMaterialComposite(n=n, pixel_size=pixel_size, thickness_map=thickness_map,
+        phase_map=phase_map, attenuation_map=attenuation_map)
+
+
 class GeometryFactory:
     _OBJECT_REGISTRY = {
         'sphere': Sphere,
@@ -437,13 +504,7 @@ class GeometryFactory:
         if 'orientation' in params and 'Orientation' not in params:
             params['Orientation'] = params.pop('orientation')
 
-        return object_class(
-            n=n,
-            pixel_size=pixel_size,
-            delta=delta,
-            beta=beta,
-            **params,
-        )
+        return object_class(n=n, pixel_size=pixel_size, delta=delta, beta=beta, **params)
 
     @classmethod
     def create_manager_from_config(cls, config, n, pixel_size, delta, beta):

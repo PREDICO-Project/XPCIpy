@@ -85,7 +85,9 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
         
         self.Beam_Spectrum_OPTIONS.append("Monoenergetic")
         self.Beam_Shape_OPTIONS = ["Plane", "Conical"]
-        self.Object_OPTIONS = ["Sphere", "Cylinder"]
+        self.Object_OPTIONS = [
+            "Sphere", "Cylinder", "Wedge", "Disk", "DoubleSlit", "KnifeEdge", "CT_phantom"
+        ]
         self.Image_OPTIONS = ["Ideal", "Realistic"]
         materials_path = resource_path("Resources/complex_refractive_index")
         self.material_file_options = sorted([
@@ -474,6 +476,18 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
                 position_key: float(raw.get(position_key, fallback[position_key])),
                 "outer_radius": float(raw.get("outer_radius", fallback["outer_radius"])),
                 "inner_radius": float(raw.get("inner_radius", fallback["inner_radius"])),
+                "width": float(raw.get("width", fallback.get("width", fallback["outer_radius"]))),
+                "thickness": float(raw.get("thickness", fallback.get("thickness", fallback["outer_radius"]))),
+                "slit_width": float(raw.get("slit_width", fallback.get("slit_width", 10.0))),
+                "center_distance": float(raw.get("center_distance", fallback.get("center_distance", 40.0))),
+                "screen_thickness": float(raw.get("screen_thickness", fallback.get("screen_thickness", 50.0))),
+                "slit_height": raw.get("slit_height", fallback.get("slit_height")),
+                "blocked_side": str(raw.get("blocked_side", fallback.get("blocked_side", "left"))),
+                "edge_offset_um": float(raw.get("edge_offset_um", fallback.get("edge_offset_um", 0.0))),
+                "center_x": float(raw.get("center_x", fallback.get("center_x", 0.0))),
+                "center_y": float(raw.get("center_y", fallback.get("center_y", 0.0))),
+                "background_material": str(raw.get("background_material", fallback.get("background_material", fallback["material"]))),
+                "inserts": copy.deepcopy(raw.get("inserts", fallback.get("inserts", []))),
                 "xshift": int(raw.get("xshift", fallback["xshift"])),
                 "yshift": int(raw.get("yshift", fallback["yshift"])),
                 "material": str(raw.get("material", fallback["material"])).strip() or fallback["material"],
@@ -495,6 +509,25 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
                 f"Cylinder Ro={radius:.2f} um, Ri={float(spec.get('inner_radius', 0.0)):.2f} um, "
                 f"{spec.get('orientation', 'Vertical')}"
             )
+        elif object_type == "Wedge":
+            geometry_txt = (
+                f"Wedge W={float(spec.get('width', 0.0)):.2f} um, "
+                f"T={float(spec.get('thickness', 0.0)):.2f} um"
+            )
+        elif object_type == "Disk":
+            geometry_txt = f"Disk R={radius:.2f} um, T={float(spec.get('thickness', 0.0)):.2f} um"
+        elif object_type == "DoubleSlit":
+            geometry_txt = (
+                f"DoubleSlit W={float(spec.get('slit_width', 0.0)):.2f} um, "
+                f"D={float(spec.get('center_distance', 0.0)):.2f} um"
+            )
+        elif object_type == "KnifeEdge":
+            geometry_txt = (
+                f"KnifeEdge {spec.get('orientation', 'vertical')}, "
+                f"{spec.get('blocked_side', 'left')}"
+            )
+        elif object_type == "CT_phantom":
+            geometry_txt = f"CT phantom R={radius:.2f} um, T={float(spec.get('thickness', 0.0)):.2f} um"
         else:
             geometry_txt = f"Sphere R={radius:.2f} um"
 
@@ -574,6 +607,46 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
                 raise ValueError("Sphere inner radius must be smaller than outer radius.")
             return
 
+        if object_type == "Wedge":
+            if float(spec.get("width", 0.0)) <= 0:
+                raise ValueError("Wedge width must be > 0.")
+            if float(spec.get("thickness", 0.0)) <= 0:
+                raise ValueError("Wedge thickness must be > 0.")
+            return
+
+        if object_type == "Disk":
+            if outer_radius <= 0 or float(spec.get("thickness", 0.0)) <= 0:
+                raise ValueError("Disk radius and thickness must be > 0.")
+            return
+
+        if object_type == "DoubleSlit":
+            for key in ("slit_width", "center_distance", "screen_thickness"):
+                if float(spec.get(key, 0.0)) <= 0:
+                    raise ValueError(f"DoubleSlit {key} must be > 0.")
+            slit_height = spec.get("slit_height")
+            if slit_height not in (None, "") and float(slit_height) <= 0:
+                raise ValueError("DoubleSlit slit height must be > 0.")
+            return
+
+        if object_type == "KnifeEdge":
+            if float(spec.get("screen_thickness", 0.0)) <= 0:
+                raise ValueError("KnifeEdge screen thickness must be > 0.")
+            orientation = str(spec.get("orientation", "")).lower()
+            blocked_side = str(spec.get("blocked_side", "")).lower()
+            if orientation not in ("vertical", "horizontal"):
+                raise ValueError("KnifeEdge orientation must be vertical or horizontal.")
+            valid_sides = ("left", "right") if orientation == "vertical" else ("up", "down")
+            if blocked_side not in valid_sides:
+                raise ValueError(f"KnifeEdge blocked side must be one of: {', '.join(valid_sides)}.")
+            return
+
+        if object_type == "CT_phantom":
+            if outer_radius <= 0 or float(spec.get("thickness", 0.0)) <= 0:
+                raise ValueError("CT phantom radius and thickness must be > 0.")
+            if not isinstance(spec.get("inserts", []), list):
+                raise ValueError("CT phantom inserts must be a list.")
+            return
+
         if outer_radius <= 0:
             raise ValueError("Cylinder outer radius must be > 0.")
         if inner_radius < 0:
@@ -598,6 +671,19 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
                     n, spec["inner_radius"], spec["outer_radius"], pixel_size, material,
                     spec["position_cm"], spec["xshift"], spec["yshift"],
                 )
+            elif spec["type"] == "Wedge":
+                current = obj.Wedge(
+                    n, spec["width"], spec["thickness"], pixel_size, material,
+                    spec["position_cm"], spec["xshift"], spec["yshift"],
+                )
+            elif spec["type"] == "Disk":
+                current = obj.Disk(n, spec["outer_radius"], spec["thickness"], pixel_size, material, spec["position_cm"], spec["xshift"], spec["yshift"])
+            elif spec["type"] == "DoubleSlit":
+                current = obj.DoubleSlit(n, spec["slit_width"], spec["center_distance"], spec["screen_thickness"], pixel_size, material, spec["position_cm"], spec.get("slit_height"), spec["xshift"], spec["yshift"])
+            elif spec["type"] == "KnifeEdge":
+                current = obj.KnifeEdge(n, pixel_size, material, spec["position_cm"], spec["orientation"], spec["blocked_side"], spec["screen_thickness"], spec["edge_offset_um"], spec["xshift"], spec["yshift"])
+            elif spec["type"] == "CT_phantom":
+                current = obj.CT_phantom(n, spec["outer_radius"], spec["thickness"], pixel_size, material, spec["inserts"], spec["position_cm"], (spec["center_x"], spec["center_y"]), spec["xshift"], spec["yshift"])
             else:
                 current = obj.Cylinder(
                     n, spec["outer_radius"], spec["inner_radius"], spec["orientation"],
@@ -617,6 +703,19 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
                     n, spec["inner_radius"], spec["outer_radius"], pixel_size, material,
                     dso_cm, spec["xshift"], spec["yshift"],
                 )
+            elif spec["type"] == "Wedge":
+                current = obj.Wedge(
+                    n, spec["width"], spec["thickness"], pixel_size, material,
+                    dso_cm, spec["xshift"], spec["yshift"],
+                )
+            elif spec["type"] == "Disk":
+                current = obj.Disk(n, spec["outer_radius"], spec["thickness"], pixel_size, material, dso_cm, spec["xshift"], spec["yshift"])
+            elif spec["type"] == "DoubleSlit":
+                current = obj.DoubleSlit(n, spec["slit_width"], spec["center_distance"], spec["screen_thickness"], pixel_size, material, dso_cm, spec.get("slit_height"), spec["xshift"], spec["yshift"])
+            elif spec["type"] == "KnifeEdge":
+                current = obj.KnifeEdge(n, pixel_size, material, dso_cm, spec["orientation"], spec["blocked_side"], spec["screen_thickness"], spec["edge_offset_um"], spec["xshift"], spec["yshift"])
+            elif spec["type"] == "CT_phantom":
+                current = obj.CT_phantom(n, spec["outer_radius"], spec["thickness"], pixel_size, material, spec["inserts"], dso_cm, (spec["center_x"], spec["center_y"]), spec["xshift"], spec["yshift"])
             else:
                 current = obj.Cylinder(
                     n, spec["outer_radius"], spec["inner_radius"], spec["orientation"],
@@ -677,6 +776,17 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
         position_var = tk.DoubleVar(value=float(fallback_spec[position_key]))
         outer_radius_var = tk.DoubleVar(value=float(fallback_spec["outer_radius"]))
         inner_radius_var = tk.DoubleVar(value=float(fallback_spec["inner_radius"]))
+        width_var = tk.DoubleVar(value=float(fallback_spec.get("width", fallback_spec["outer_radius"])))
+        thickness_var = tk.DoubleVar(value=float(fallback_spec.get("thickness", fallback_spec["outer_radius"])))
+        slit_width_var = tk.DoubleVar(value=float(fallback_spec.get("slit_width", 10.0)))
+        center_distance_var = tk.DoubleVar(value=float(fallback_spec.get("center_distance", 40.0)))
+        screen_thickness_var = tk.DoubleVar(value=float(fallback_spec.get("screen_thickness", 50.0)))
+        slit_height_var = tk.StringVar(value=str(fallback_spec.get("slit_height", "")))
+        blocked_side_var = tk.StringVar(value=fallback_spec.get("blocked_side", "left"))
+        edge_offset_var = tk.DoubleVar(value=float(fallback_spec.get("edge_offset_um", 0.0)))
+        center_x_var = tk.DoubleVar(value=float(fallback_spec.get("center_x", 0.0)))
+        center_y_var = tk.DoubleVar(value=float(fallback_spec.get("center_y", 0.0)))
+        inserts_var = tk.StringVar(value=json.dumps(fallback_spec.get("inserts", [])))
         xshift_var = tk.IntVar(value=int(fallback_spec["xshift"]))
         yshift_var = tk.IntVar(value=int(fallback_spec["yshift"]))
         material_var = tk.StringVar(value=fallback_spec["material"] or self._default_material_name())
@@ -685,14 +795,33 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
 
         wg.create_label_combobox(editor, "Geometry", self.Object_OPTIONS, 0, 0, textvariable=type_var)
         wg.create_label_entry(editor, position_label, 1, 0, textvariable=position_var)
-        wg.create_label_entry(editor, "Radius / outer radius (um)", 2, 0, textvariable=outer_radius_var)
-        wg.create_label_entry(editor, "Inner radius (um)", 3, 0, textvariable=inner_radius_var)
-        wg.create_label_combobox(editor, "Orientation", ["Horizontal", "Vertical"], 4, 0, textvariable=orientation_var)
-        wg.create_label_entry(editor, "X shift (pixels)", 5, 0, textvariable=xshift_var)
-        wg.create_label_entry(editor, "Y shift (pixels)", 6, 0, textvariable=yshift_var)
-        wg.create_label_combobox(editor, "Material", self.material_file_options, 7, 0, textvariable=material_var)
+        outer_radius_label, outer_radius_entry = wg.create_label_entry(
+            editor, "Radius / outer radius (um)", 2, 0, textvariable=outer_radius_var
+        )
+        inner_radius_label, inner_radius_entry = wg.create_label_entry(
+            editor, "Inner radius (um)", 3, 0, textvariable=inner_radius_var
+        )
+        width_label, width_entry = wg.create_label_entry(editor, "Wedge width (um)", 4, 0, textvariable=width_var)
+        thickness_label, thickness_entry = wg.create_label_entry(editor, "Wedge thickness (um)", 5, 0, textvariable=thickness_var)
+        slit_width_label, slit_width_entry = wg.create_label_entry(editor, "Slit width (um)", 6, 0, textvariable=slit_width_var)
+        center_distance_label, center_distance_entry = wg.create_label_entry(editor, "Slit center distance (um)", 7, 0, textvariable=center_distance_var)
+        screen_thickness_label, screen_thickness_entry = wg.create_label_entry(editor, "Screen thickness (um)", 8, 0, textvariable=screen_thickness_var)
+        slit_height_label, slit_height_entry = wg.create_label_entry(editor, "Slit height (um, optional)", 9, 0, textvariable=slit_height_var)
+        edge_offset_label, edge_offset_entry = wg.create_label_entry(editor, "Edge offset (um)", 10, 0, textvariable=edge_offset_var)
+        center_x_label, center_x_entry = wg.create_label_entry(editor, "CT center X (um)", 11, 0, textvariable=center_x_var)
+        center_y_label, center_y_entry = wg.create_label_entry(editor, "CT center Y (um)", 12, 0, textvariable=center_y_var)
+        inserts_label, inserts_entry = wg.create_label_entry(editor, "CT inserts (JSON)", 13, 0, textvariable=inserts_var)
+        inserts_button = wg.create_button(
+            editor, "Edit inserts...", 14, 0,
+            command=lambda: open_insert_editor(),
+        )
+        orientation_label, orientation_box = wg.create_label_combobox(editor, "Orientation", ["Horizontal", "Vertical"], 15, 0, textvariable=orientation_var)
+        blocked_side_label, blocked_side_box = wg.create_label_combobox(editor, "Blocked side", ["left", "right", "up", "down"], 16, 0, textvariable=blocked_side_var)
+        wg.create_label_entry(editor, "X shift (pixels)", 17, 0, textvariable=xshift_var)
+        wg.create_label_entry(editor, "Y shift (pixels)", 18, 0, textvariable=yshift_var)
+        wg.create_label_combobox(editor, "Material", self.material_file_options, 19, 0, textvariable=material_var)
         ttk.Checkbutton(editor, text="Use as insert (replace base thickness)", variable=is_insert_var).grid(
-            row=8, column=0, columnspan=2, sticky="w", padx=10, pady=(6, 0)
+            row=20, column=0, columnspan=2, sticky="w", padx=10, pady=(6, 0)
         )
 
         validation_var = tk.StringVar(value="")
@@ -700,7 +829,7 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
             editor, textvariable=validation_var,
             foreground="tomato", wraplength=230, justify="left"
         )
-        validation_lbl.grid(row=9, column=0, columnspan=2, sticky="ew", padx=10, pady=(4, 0))
+        validation_lbl.grid(row=21, column=0, columnspan=2, sticky="ew", padx=10, pady=(4, 0))
 
         selected_index = {"value": 0 if working_objects else None}
 
@@ -709,6 +838,17 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
             position_var.set(float(spec.get(position_key, fallback_spec[position_key])))
             outer_radius_var.set(float(spec.get("outer_radius", fallback_spec["outer_radius"])))
             inner_radius_var.set(float(spec.get("inner_radius", fallback_spec["inner_radius"])))
+            width_var.set(float(spec.get("width", fallback_spec.get("width", fallback_spec["outer_radius"]))))
+            thickness_var.set(float(spec.get("thickness", fallback_spec.get("thickness", fallback_spec["outer_radius"]))))
+            slit_width_var.set(float(spec.get("slit_width", 10.0)))
+            center_distance_var.set(float(spec.get("center_distance", 40.0)))
+            screen_thickness_var.set(float(spec.get("screen_thickness", 50.0)))
+            slit_height_var.set("" if spec.get("slit_height") in (None, "") else str(spec.get("slit_height")))
+            blocked_side_var.set(spec.get("blocked_side", "left"))
+            edge_offset_var.set(float(spec.get("edge_offset_um", 0.0)))
+            center_x_var.set(float(spec.get("center_x", 0.0)))
+            center_y_var.set(float(spec.get("center_y", 0.0)))
+            inserts_var.set(json.dumps(spec.get("inserts", [])))
             xshift_var.set(int(spec.get("xshift", fallback_spec["xshift"])))
             yshift_var.set(int(spec.get("yshift", fallback_spec["yshift"])))
             material_var.set(spec.get("material", fallback_spec["material"]))
@@ -721,12 +861,145 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
                 position_key: float(position_var.get()),
                 "outer_radius": float(outer_radius_var.get()),
                 "inner_radius": float(inner_radius_var.get()),
+                "width": float(width_var.get()),
+                "thickness": float(thickness_var.get()),
+                "slit_width": float(slit_width_var.get()),
+                "center_distance": float(center_distance_var.get()),
+                "screen_thickness": float(screen_thickness_var.get()),
+                "slit_height": slit_height_var.get().strip() or None,
+                "blocked_side": blocked_side_var.get().strip() or "left",
+                "edge_offset_um": float(edge_offset_var.get()),
+                "center_x": float(center_x_var.get()),
+                "center_y": float(center_y_var.get()),
+                "inserts": json.loads(inserts_var.get() or "[]"),
                 "xshift": int(xshift_var.get()),
                 "yshift": int(yshift_var.get()),
                 "material": material_var.get().strip() or self._default_material_name(),
                 "orientation": orientation_var.get().strip() or "Vertical",
                 "is_insert": bool(is_insert_var.get()),
             }
+
+        def open_insert_editor():
+            try:
+                inserts = json.loads(inserts_var.get() or "[]")
+                if not isinstance(inserts, list):
+                    raise ValueError("Insert data must be a list.")
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                messagebox.showerror("CT phantom inserts", f"Invalid insert data: {exc}", parent=window)
+                return
+
+            insert_window = tk.Toplevel(window)
+            insert_window.title("CT phantom inserts")
+            insert_window.configure(background="gray20")
+            insert_window.transient(window)
+            insert_window.grab_set()
+            insert_window.grid_columnconfigure(0, weight=1)
+            insert_window.grid_columnconfigure(1, weight=1)
+            insert_window.grid_rowconfigure(0, weight=1)
+
+            insert_list = tk.Listbox(
+                insert_window, height=8, exportselection=False,
+                bg="#2a2a2a", fg="white", selectbackground="#555555",
+            )
+            insert_list.grid(row=0, column=0, rowspan=6, sticky="nsew", padx=(10, 6), pady=10)
+
+            fields = ttk.LabelFrame(insert_window, text="Insert", padding=8, style="TLabelframe")
+            fields.grid(row=0, column=1, sticky="nsew", padx=(6, 10), pady=10)
+            fields.grid_columnconfigure(1, weight=1)
+
+            radius_var = tk.DoubleVar(value=10.0)
+            insert_thickness_var = tk.DoubleVar(value=10.0)
+            insert_x_var = tk.DoubleVar(value=0.0)
+            insert_y_var = tk.DoubleVar(value=0.0)
+            insert_material_var = tk.StringVar(value=self._default_material_name())
+
+            wg.create_label_entry(fields, "Radius (um)", 0, 0, textvariable=radius_var)
+            wg.create_label_entry(fields, "Thickness (um)", 1, 0, textvariable=insert_thickness_var)
+            wg.create_label_entry(fields, "Center X (um)", 2, 0, textvariable=insert_x_var)
+            wg.create_label_entry(fields, "Center Y (um)", 3, 0, textvariable=insert_y_var)
+            wg.create_label_combobox(fields, "Material", self.material_file_options, 4, 0, textvariable=insert_material_var)
+
+            selected_insert = {"value": None}
+
+            def insert_from_fields():
+                return {
+                    "radius": float(radius_var.get()),
+                    "thickness": float(insert_thickness_var.get()),
+                    "center": [float(insert_x_var.get()), float(insert_y_var.get())],
+                    "material": insert_material_var.get().strip() or self._default_material_name(),
+                }
+
+            def load_insert(index):
+                selected_insert["value"] = index
+                item = inserts[index]
+                center = item.get("center", [0.0, 0.0])
+                radius_var.set(float(item.get("radius", 0.0)))
+                insert_thickness_var.set(float(item.get("thickness", 0.0)))
+                insert_x_var.set(float(center[0]))
+                insert_y_var.set(float(center[1]))
+                insert_material_var.set(item.get("material", self._default_material_name()))
+
+            def refresh_inserts():
+                insert_list.delete(0, tk.END)
+                for index, item in enumerate(inserts):
+                    center = item.get("center", [0.0, 0.0])
+                    insert_list.insert(
+                        tk.END,
+                        f"{index + 1:02d} | R={float(item.get('radius', 0.0)):.2f} um | "
+                        f"({float(center[0]):.2f}, {float(center[1]):.2f})",
+                    )
+                if inserts:
+                    index = selected_insert["value"]
+                    if index is None or index >= len(inserts):
+                        index = 0
+                    insert_list.selection_set(index)
+                    load_insert(index)
+
+            def add_insert():
+                try:
+                    item = insert_from_fields()
+                    if item["radius"] <= 0 or item["thickness"] <= 0:
+                        raise ValueError("Radius and thickness must be > 0.")
+                except (TypeError, tk.TclError, ValueError) as exc:
+                    messagebox.showerror("Insert error", str(exc), parent=insert_window)
+                    return
+                inserts.append(item)
+                selected_insert["value"] = len(inserts) - 1
+                refresh_inserts()
+
+            def update_insert():
+                index = selected_insert["value"]
+                if index is None:
+                    return
+                try:
+                    item = insert_from_fields()
+                    if item["radius"] <= 0 or item["thickness"] <= 0:
+                        raise ValueError("Radius and thickness must be > 0.")
+                except (TypeError, tk.TclError, ValueError) as exc:
+                    messagebox.showerror("Insert error", str(exc), parent=insert_window)
+                    return
+                inserts[index] = item
+                refresh_inserts()
+
+            def remove_insert():
+                index = selected_insert["value"]
+                if index is None:
+                    return
+                del inserts[index]
+                selected_insert["value"] = None
+                refresh_inserts()
+
+            def apply_inserts():
+                inserts_var.set(json.dumps(inserts))
+                if add_object():
+                    insert_window.destroy()
+
+            insert_list.bind("<<ListboxSelect>>", lambda _event: load_insert(insert_list.curselection()[0]) if insert_list.curselection() else None)
+            wg.create_button(insert_window, "Add", 1, 1, command=add_insert)
+            wg.create_button(insert_window, "Update", 2, 1, command=update_insert)
+            wg.create_button(insert_window, "Remove", 3, 1, command=remove_insert)
+            wg.create_button(insert_window, "Apply", 4, 1, command=apply_inserts)
+            refresh_inserts()
 
         def refresh_listbox():
             nonlocal working_objects
@@ -753,10 +1026,11 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
                 self._validate_object_spec(spec, mode)
             except Exception as exc:
                 messagebox.showerror("Object error", str(exc), parent=window)
-                return
+                return False
             working_objects.append(spec)
             selected_index["value"] = len(working_objects) - 1
             refresh_listbox()
+            return True
 
         def update_object():
             if selected_index["value"] is None:
@@ -811,12 +1085,67 @@ class PCSim_gui(InlineTab, TLTab, CheckTLTab, SNSTab, TLRecTab):
                 btn_add.state(["disabled"])
                 btn_update.state(["disabled"])
 
+        def update_geometry_fields(*_):
+            object_type = type_var.get().strip()
+            is_wedge = type_var.get().strip() == "Wedge"
+            is_disk = object_type == "Disk"
+            is_double_slit = object_type == "DoubleSlit"
+            is_knife_edge = object_type == "KnifeEdge"
+            is_ct = object_type == "CT_phantom"
+
+            if is_wedge:
+                width_label.configure(text="Wedge width (um)")
+                thickness_label.configure(text="Wedge thickness (um)")
+            elif is_disk:
+                width_label.configure(text="Disk radius (um)")
+                thickness_label.configure(text="Disk thickness (um)")
+            elif is_ct:
+                width_label.configure(text="CT radius (um)")
+                thickness_label.configure(text="CT thickness (um)")
+
+            def set_group_visible(widgets, visible):
+                for widget in widgets:
+                    if visible:
+                        widget.grid()
+                    else:
+                        widget.grid_remove()
+
+            set_group_visible(
+                (outer_radius_label, outer_radius_entry, inner_radius_label, inner_radius_entry),
+                object_type in ("Sphere", "Cylinder"),
+            )
+            set_group_visible(
+                (width_label, width_entry, thickness_label, thickness_entry),
+                is_wedge or is_disk or is_ct,
+            )
+            set_group_visible((slit_width_label, slit_width_entry, center_distance_label, center_distance_entry, slit_height_label, slit_height_entry), is_double_slit)
+            set_group_visible((screen_thickness_label, screen_thickness_entry), is_double_slit or is_knife_edge or is_ct)
+            set_group_visible((edge_offset_label, edge_offset_entry), is_knife_edge)
+            set_group_visible((center_x_label, center_x_entry, center_y_label, center_y_entry, inserts_label, inserts_entry), is_ct)
+            inserts_button.grid() if is_ct else inserts_button.grid_remove()
+            set_group_visible(
+                (orientation_label, orientation_box),
+                object_type == "Cylinder",
+            )
+
+            for widget in (outer_radius_entry, inner_radius_entry):
+                widget.configure(state="normal")
+            for widget in (width_entry, thickness_entry):
+                widget.configure(state="normal" if is_wedge else "disabled")
+            orientation_box.configure(state="readonly" if object_type == "Cylinder" else "disabled")
+            blocked_side_box.configure(state="readonly" if is_knife_edge else "disabled")
+
         for _v in (type_var, position_var, outer_radius_var, inner_radius_var,
-                 xshift_var, yshift_var, material_var, orientation_var, is_insert_var):
+             width_var, thickness_var, slit_width_var, center_distance_var,
+             screen_thickness_var, slit_height_var, blocked_side_var,
+             edge_offset_var, center_x_var, center_y_var, inserts_var,
+             xshift_var, yshift_var, material_var, orientation_var, is_insert_var):
             _v.trace_add("write", _validate_editor)
+        type_var.trace_add("write", update_geometry_fields)
 
         refresh_listbox()
         _validate_editor()
+        update_geometry_fields()
 
     def _commit_inline_objects(self, objects_data):
         self.inline_objects_data = self._normalize_object_specs(objects_data, mode="inline")

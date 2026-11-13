@@ -12,6 +12,7 @@ import numpy as np
 import src.TLRec.Image_Display as Image_Display 
 from src.TLRec.Experimental_Retrieval import Modulation_Curve_Reconstruction
 from src.TLRec.utils import Apply_Phase_Wiener_filter
+import src.TLRec.backend as backend
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg)
 from matplotlib.figure import Figure
 import json
@@ -20,7 +21,7 @@ from GUI.utils import resource_path
 import time
 import threading
 from tkinterdnd2 import DND_FILES, TkinterDnD
-from GUI.ui.widgets import DropZone
+from GUI.ui.widgets import DropZone, ToggleButton
 from GUI.ui.tooltips import ToolTip
 
 
@@ -218,6 +219,14 @@ class TLRec_GUI:
         #self.UploadButton = wg.create_button(frame_recon,'Confirm', 2, 0, state = 'disabled', command= lambda:self.Upload(self.Algorithm_ComboBox))
 
         self.RetrieveButton = wg.create_button(frame_recon,'Retrieve', 2, 0, columnspan=2 ,state = 'disabled', command= lambda:self.Run(self.Algorithm_ComboBox))
+
+        self.use_gpu = tk.BooleanVar(value=False)
+        gpu_ok = backend.gpu_available()
+        self.UseGPUCheck = ToggleButton(frame_recon, text='Use GPU', variable=self.use_gpu,
+                                         state='normal' if gpu_ok else 'disabled')
+        self.UseGPUCheck.grid(row=3, column=0, columnspan=2, sticky='w', padx=5, pady=2)
+        ToolTip(self.UseGPUCheck, "Run GPU-capable reconstruction types (currently Step Correction) on the GPU via CuPy."
+                if gpu_ok else "No CUDA device / CuPy found: GPU acceleration is unavailable.")
         
         
         Modify_configButton = wg.create_button(main_frame, 'Modify Default Parameters', 3, 0, padx = 60, command = self.Open_config_params)
@@ -816,7 +825,7 @@ class TLRec_GUI:
             try:
                 start_time = time.perf_counter()
                 Diff_Phase, transmission, Dark_Field, Phase, _, _ = Modulation_Curve_Reconstruction(self.images, self.images_reference,
-                self.G2Period_default.get(),self.DSG1_Default.get(), self.DG1G2_Default.get(), self.DOG1_Default.get(), self.Energy_Default.get(), self.pixel_size.get(),type=rec_type, unwrap_phase=False)
+                self.G2Period_default.get(),self.DSG1_Default.get(), self.DG1G2_Default.get(), self.DOG1_Default.get(), self.Energy_Default.get(), self.pixel_size.get(),type=rec_type, unwrap_phase=False, use_gpu=self.use_gpu.get())
                 end_time = time.perf_counter()
                 elapsed_time = end_time - start_time
                 print("time: {} s".format(elapsed_time))
@@ -945,7 +954,10 @@ class TLRec_GUI:
 
         def recurse(widget):
             for child in widget.winfo_children():
-                if isinstance(child, INTERACTIVE_TYPES):
+                # GPU toggle must stay disabled when no GPU is available, regardless of busy state.
+                if child is getattr(self, "UseGPUCheck", None):
+                    child.configure(state="disabled" if busy or not backend.gpu_available() else "normal")
+                elif isinstance(child, INTERACTIVE_TYPES):
                     try:
                         child.configure(state=state)
                     except tk.TclError:

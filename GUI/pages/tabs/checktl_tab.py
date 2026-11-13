@@ -108,10 +108,11 @@ class CheckTLTab:
 
 
     def RunCheckTL(self):
+        if not self.verify_physical_values_checkTL():
+            self.set_status("Error in physical values for Talbot carpet simulation.")
+            return
+
         def _run():
-            if not self.verify_physical_values_checkTL():
-                self.set_status("Error in physical values for Talbot carpet simulation.")
-                return
             n = self.c_n.get()
             pixel_size = self.c_pixel_size.get()
             FWHM_source = self.c_FWHM_source.get()
