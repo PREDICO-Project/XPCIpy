@@ -3,7 +3,7 @@
 ## XPCIpy GUI – Change Log
 This document summarizes all approved updates, fixes, and improvements implemented in the Reconstruction (TLRec) and Simulation (PCSim) GUI modules.
 
-## [v. 1.4.0] – Model-Based Reconstruction & Expanded Simulation
+## [v. 1.4.0] –  Expanded Simulation
 
 ### TLRec – Reconstruction Methods and GPU Acceleration
 - **Optional GPU acceleration for Step Correction**: Added a CuPy backend for the expensive covariance calculation, with a GUI toggle enabled when a compatible CUDA device is available. NumPy remains the default and fallback backend.
